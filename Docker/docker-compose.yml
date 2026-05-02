@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: saas_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/saas_db
+      API_KEY: test-api-key-12345
+      TELEGRAM_BOT_TOKEN: "replace-with-token"
+      TELEGRAM_PROXY: ""
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/saas_db
+      TELEGRAM_BOT_TOKEN: "replace-with-token"
+      TELEGRAM_PROXY: ""
+    command: [ "python", "scripts/reminder_worker.py" ]
+
+volumes:
+  db_data: {}
