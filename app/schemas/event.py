@@ -1,12 +1,7 @@
 from pydantic import BaseModel, Field
 from pydantic import ConfigDict
-from typing import Any
+from typing import Any, Dict
 from datetime import datetime
-
-
-class EventPayloadSchema(BaseModel):
-    client_tg_id: int = Field(...)
-    text: str = Field(...)
 
 
 class EventSchema(BaseModel):
@@ -16,6 +11,6 @@ class EventSchema(BaseModel):
     type: str
     business_id: int
     appointment_id: int
-    payload: EventPayloadSchema
+    payload: Dict[str, Any]  # Гибкий payload для разных типов событий
     is_sent: bool
     created_at: datetime

@@ -14,7 +14,9 @@ services:
       - db_data:/var/lib/postgresql/data
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
     depends_on:
       - db
     environment:
@@ -26,7 +28,9 @@ services:
       - "8000:8000"
 
   worker:
-    build: .
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
     depends_on:
       - db
     environment:

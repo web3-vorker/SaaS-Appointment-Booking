@@ -19,3 +19,4 @@ class StaffModel(Base):
 
   business = relationship('BusinessModel', back_populates='staffs')
   appointments = relationship('AppointmentModel', back_populates='staff', cascade='all, delete')
+  services = relationship('StaffServiceModel', back_populates='staff', cascade='all, delete')

@@ -1,0 +1,27 @@
+services:
+  redis_container:
+    image: redis:7
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis_gui:
+    image: redis/redisinsight:latest
+    ports:
+      - 8001:5540
+    environment:
+      - REDIS_HOSTS=local:redis_container:6379
+      - RI_SERVE_STATICS=true
+      - RI_APP_FOLDER_ABSOLUTE_PATH=/data
+    volumes:
+      - redis_insight_data:/data
+    depends_on:
+      redis_container:
+        condition: service_healthy
+
+volumes:
+  redis_insight_data:

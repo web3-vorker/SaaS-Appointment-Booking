@@ -24,6 +24,7 @@ class AppointmentModel(Base):
   id = Column(Integer, primary_key=True)
   business_id = Column(Integer, ForeignKey('businesses.id'), nullable=False)
   client_id = Column(Integer, ForeignKey('clients.id'), nullable=False)
+  client_name = Column(String, nullable=False)
   staff_id = Column(Integer, ForeignKey('staffs.id'), nullable=False)
   service_id = Column(Integer, ForeignKey('services.id'), nullable=False)
   start_time = Column(DateTime, nullable=False)

@@ -3,7 +3,7 @@
 from datetime import datetime
 from pydantic import EmailStr, Field
 from app.models.base import Base
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, UniqueConstraint, Index, BigInteger
 from sqlalchemy.orm import relationship
 
 
@@ -19,7 +19,7 @@ class ClientModel(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
-    tg_id = Column(Integer, nullable=False)
+    tg_id = Column(BigInteger, nullable=False)
     business_id = Column(Integer, ForeignKey('businesses.id'), nullable=False)
     created_at = Column(DateTime, default=datetime.now)
 

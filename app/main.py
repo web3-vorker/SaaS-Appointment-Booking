@@ -10,12 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.routers.route import main_router
-from app.dev.dev_route import dev_router
+from app.dev.dev_router import dev_router
+from app.admin.admin_router import admin_router
 from app.utils.logger import logger
+from app.redis.limiter import close_redis
 from app.db.database import engine
 from app.models.base import Base
 import app.models.events
 from app.scheduler.event_scheduler import event_scheduler_loop
+from app.config.config import config
 
 
 @asynccontextmanager
@@ -36,11 +39,16 @@ async def lifespan(app: FastAPI):
             await scheduler_task
         except asyncio.CancelledError:
             pass
+    
+    # Закрываем Redis соединение
+    await close_redis()
+    logger.info("Redis connection closed")
 
 
 app = FastAPI(title="SaaS Appointment Booking API", version="1.0.0", lifespan=lifespan)
-app.include_router(main_router, prefix="/api/v1")
-app.include_router(dev_router, prefix="/dev")
+app.include_router(main_router)
+app.include_router(dev_router)
+app.include_router(admin_router)
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -57,10 +65,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_credentials=True,
+    allow_origins=config.cors_origins,
+    allow_methods=config.cors_methods,
+    allow_headers=config.cors_headers,
+    allow_credentials=config.cors_credentials,
 )
 
 

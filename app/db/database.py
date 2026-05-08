@@ -1,17 +1,11 @@
 from typing import Annotated
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config.config import config
 
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-
-engine = create_async_engine(DATABASE_URL)
+engine = create_async_engine(config.database_url)
 new_session = async_sessionmaker(engine, expire_on_commit=False)
 
 

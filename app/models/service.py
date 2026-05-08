@@ -21,3 +21,4 @@ class ServiceModel(Base):
 
   business = relationship('BusinessModel', back_populates='services')
   appointments = relationship('AppointmentModel', back_populates='service')
+  staffs = relationship('StaffServiceModel', back_populates='service', cascade='all, delete')
