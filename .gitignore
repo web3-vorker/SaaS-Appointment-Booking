@@ -70,6 +70,10 @@ coverage.xml
 traceback.txt
 for_gpt_builder.py
 for_got.py
+logs.txt
+PROJECT_OVERVIEW.md
+report.txt
 __init__.py
 scripts
 bot
+dev_bot

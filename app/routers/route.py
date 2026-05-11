@@ -55,7 +55,7 @@ async def get_service_staffs(session: SessionDep, service_id: int, business: Bus
 
 
 """----- Получение свободных дней для сотрудника на месяц -----"""
-@main_router.get("/staffs/{staff_id}/free-days/", dependencies=[Depends(rate_limiter(30, 60, "free_days"))])
+@main_router.get("/staffs/{staff_id}/free-days/")  # dependencies=[Depends(rate_limiter(30, 60, "free_days"))]
 async def get_free_days(
     session: SessionDep,
     staff_id: int,
@@ -65,43 +65,14 @@ async def get_free_days(
     try:
         repository = Repository(session)
         service = Service(session, repository)
-        
-        # Начинаем с сегодняшнего дня (naive UTC)
-        today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
-        free_days = []
-
-        # Проверяем N дней вперед (из конфига)
-        from app.config.config import config
-        for i in range(config.free_days_lookahead):
-            check_date = today + timedelta(days=i)
-            
-            # Получаем длительность услуги
-            service_obj = await service.get_service_by_id(business.id, service_id)
-            if not service_obj or service_obj["business_id"] != business.id:
-                logger.warning(f"Service {service_id} not found for business {business.id}")
-                raise HTTPException(status_code=404, detail="Service not found")
-            
-            duration_minutes = service_obj["duration_minutes"]
-            logger.info(f"Service duration: {duration_minutes} minutes")
-
-
-            busy_slots = await service.get_busy_slots(business.id, staff_id, check_date)
-            free_slots = await get_free_slots(busy_slots, check_date, duration_minutes, business.working_time_start, business.working_time_end)
-            
-            # Если есть хотя бы один свободный слот, добавляем день
-            if free_slots:
-                free_days.append({
-                    "date": check_date.strftime("%Y-%m-%d"),
-                    "slots_count": len(free_slots)
-                })
-        
+        free_days = await service.get_free_days(business, staff_id, service_id)
         return free_days
     except HTTPException:
         raise    
     
 
 """----- Получение свободных слотов для сотрудника в заданный день -----"""
-@main_router.get("/staffs/{staff_id}/free-slots/", dependencies=[Depends(rate_limiter(30, 60, "free_slots"))])
+@main_router.get("/staffs/{staff_id}/free-slots/")  # dependencies=[Depends(rate_limiter(30, 60, "free_slots"))]
 async def get_available_slots(
     session: SessionDep,
     staff_id: int,
@@ -110,27 +81,9 @@ async def get_available_slots(
     business: BusinessModel = Depends(get_current_business)
 ):
     try:
-        logger.info(f"free_slots called: staff_id={staff_id}, date={date}, service_id={service_id}, business_id={business.id}")
-        
-        date_obj = datetime.strptime(date, "%Y-%m-%d")
-        
         repository = Repository(session)
         service = Service(session, repository)
-        
-        # Получаем длительность услуги
-        service_obj = await service.get_service_by_id(business.id, service_id)
-        if not service_obj or service_obj["business_id"] != business.id:
-            logger.warning(f"Service {service_id} not found for business {business.id}")
-            raise HTTPException(status_code=404, detail="Service not found")
-        
-        duration_minutes = service_obj["duration_minutes"]
-        logger.info(f"Service duration: {duration_minutes} minutes")
-        
-        busy_slots = await service.get_busy_slots(business.id, staff_id, date_obj)
-        logger.info(f"Found {len(busy_slots)} busy slots")
-        
-        free_slots = await get_free_slots(busy_slots, date_obj, duration_minutes=duration_minutes, work_start=business.working_time_start, work_end=business.working_time_end)
-        logger.info(f"Calculated {len(free_slots)} free slots")
+        free_slots = await service.get_available_slots(business, staff_id, service_id, date)
         
         return free_slots
     except HTTPException:
@@ -141,7 +94,7 @@ async def get_available_slots(
     
 
 """----- Получение всех записей клиента -----"""
-@main_router.get("/clients/{client_id}/appointments/", dependencies=[Depends(rate_limiter(30, 60, "get_client_appointments"))])
+@main_router.get("/clients/{client_id}/appointments/")  # dependencies=[Depends(rate_limiter(30, 60, "get_client_appointments"))]
 async def get_client_appointments(session: SessionDep, client_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -178,7 +131,7 @@ async def mark_event_sent(session: SessionDep, event_id: int, business: Business
 
 
 """----- Создание новой записи -----"""
-@main_router.post("/appointments/create/", dependencies=[Depends(rate_limiter(10, 60, "create_appointment"))])
+@main_router.post("/appointments/create/")  # dependencies=[Depends(rate_limiter(10, 60, "create_appointment"))]
 async def create_appointment(session: SessionDep, appointment_data: AppointmentCreateSchema, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -190,7 +143,7 @@ async def create_appointment(session: SessionDep, appointment_data: AppointmentC
 
 
 """----- Получение или создание клиента -----"""
-@main_router.post("/clients/get-or-create/", dependencies=[Depends(rate_limiter(20, 60, "get_or_create_client"))])
+@main_router.post("/clients/get-or-create/")  # dependencies=[Depends(rate_limiter(20, 60, "get_or_create_client"))]
 async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str, phone: str = None, business: BusinessModel = Depends(get_current_business)) -> dict:
     try:
         repository = Repository(session)
@@ -202,7 +155,7 @@ async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str
 
 
 """----- Отмена записи клиента -----"""
-@main_router.post("/clients/{client_id}/appointments/{appointment_id}/", dependencies=[Depends(rate_limiter(10, 60, "cancel_appointment"))])
+@main_router.post("/clients/{client_id}/appointments/{appointment_id}/")  # dependencies=[Depends(rate_limiter(10, 60, "cancel_appointment"))]
 async def cancelled_appointment(session: SessionDep, client_id: int, appointment_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)

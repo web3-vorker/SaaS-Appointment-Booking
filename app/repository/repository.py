@@ -12,6 +12,7 @@ from app.models.staffs import StaffModel
 from app.models.clients import ClientModel
 from app.models.business import BusinessModel
 from app.models.staff_services import StaffServiceModel
+from app.models.schedule_exceptions import ScheduleExceptionModel
 from app.schemas.appointment import AppointmentCreateSchema
 from app.utils.logger import logger
 from app.utils.datetime_utils import now_utc, to_naive_utc
@@ -73,10 +74,10 @@ class Repository:
                 .where(StaffModel.id == staff_id)
             )
 
-            if not client_result.scalars().first():
-                return False
-                
-            if not staff_result.scalars().first():
+            client = client_result.scalars().first()
+            staff = staff_result.scalars().first()
+            
+            if not client or not staff:
                 return False
 
             return True
@@ -149,7 +150,7 @@ class Repository:
                 .where(AppointmentModel.business_id == business_id)
                 .where(AppointmentModel.client_id == client_id)
                 .where(AppointmentModel.status == 'scheduled')
-                .where(AppointmentModel.end_time > now_utc)
+                .where(AppointmentModel.end_time > now_utc())
             )
             return result.scalars().all()
         except Exception as e:
@@ -175,6 +176,24 @@ class Repository:
         
         except Exception as e:
             logger.error(f"Error getting business appointments: {e}")
+            raise
+
+
+    # Получаем историю записей бизнеса (все записи, включая отмененные и прошедшие)
+    async def get_business_appointment_history(self, business_id: int) -> list[AppointmentModel]:
+        try:
+            result = await self.session.execute(
+                select(AppointmentModel).order_by(AppointmentModel.start_time.desc()).options(
+                    selectinload(AppointmentModel.client),
+                    selectinload(AppointmentModel.staff),
+                    selectinload(AppointmentModel.service)
+                )
+                .where(AppointmentModel.business_id == business_id)
+            )
+
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error getting business appointment history: {e}")
             raise
     
     
@@ -242,7 +261,6 @@ class Repository:
             if not event:
                 return None
             event.is_sent = True
-            # Не делаем commit здесь - это ответственность service слоя
             return event
         except Exception as e:
             logger.error(f"Error marking event sent: {e}")
@@ -253,29 +271,15 @@ class Repository:
     async def cancelled_appointment(self, appointment: AppointmentModel) -> dict:
         try:
             appointment.status = "cancelled"
-            # Не делаем commit здесь - это ответственность service слоя
             return {"success": "OK"}
         except Exception as e:
             logger.error(f"Error cancelling appointment: {e}")
             raise
 
 
-    # Ищем запись по id
+# Ищем запись по id
     async def get_appointment_by_id(self, business_id: int, client_id: int, appointment_id: int) -> AppointmentModel:
       try:
-        logger.info(f"Searching for appointment: business_id={business_id}, client_id={client_id}, appointment_id={appointment_id}")
-
-        # Сначала проверим, существует ли запись вообще (без фильтра по статусу)
-        result_all = await self.session.execute(
-            select(AppointmentModel)
-            .where(AppointmentModel.id == appointment_id)
-        )
-        appointment_all = result_all.scalars().first()
-        if appointment_all:
-            logger.info(f"Appointment exists with status: {appointment_all.status}, business: {appointment_all.business_id}, client: {appointment_all.client_id}")
-        else:
-            logger.warning(f"Appointment with id={appointment_id} does not exist at all")
-
         result = await self.session.execute(
             select(AppointmentModel)
             .options(
@@ -289,14 +293,11 @@ class Repository:
             .where(AppointmentModel.status == "scheduled")
         )
 
-        appointment = result.scalars().first()
-        logger.info(f"Found appointment with filters: {appointment.id if appointment else 'None'}")
-
-        return appointment
+        return result.scalars().first()
 
       except Exception as e:
-        logger.error(f"Error in get_appointment_by_id: {e}")
-        raise
+          logger.error(f"Error in get_appointment_by_id: {e}")
+          raise
       
       
     # Получение или создание клиента
@@ -330,7 +331,6 @@ class Repository:
                 client.phone = normalized_phone
                 updated = True
             
-            # Не делаем commit здесь - это ответственность service слоя
             return {"client": client, "is_owner": is_owner, "updated": updated}
         
         new_client = ClientModel(
@@ -341,7 +341,6 @@ class Repository:
         )
 
         self.session.add(new_client)
-        # Не делаем commit здесь - это ответственность service слоя
         await self.session.flush()  # Flush для получения ID
 
         return {"client": new_client, "is_owner": is_owner, "updated": False}
@@ -388,4 +387,217 @@ class Repository:
             return event
         except Exception as e:
             logger.error(f"Error creating event: {e}")
+            raise
+
+
+    # Получаем исключение в графике для конкретной даты
+    async def get_schedule_exception(self, business_id: int, date: datetime) -> ScheduleExceptionModel | None:
+        try:
+            result = await self.session.execute(
+                select(ScheduleExceptionModel)
+                .where(ScheduleExceptionModel.business_id == business_id)
+                .where(ScheduleExceptionModel.date == date.date())
+            )
+            return result.scalars().first()
+        except Exception as e:
+            logger.error(f"Error fetching schedule exception: {e}")
+            raise
+
+
+    # Получаем все исключения в графике для бизнеса в диапазоне дат
+    async def get_schedule_exceptions_range(self, business_id: int, start_date: datetime, end_date: datetime) -> list[ScheduleExceptionModel]:
+        try:
+            result = await self.session.execute(
+                select(ScheduleExceptionModel)
+                .where(ScheduleExceptionModel.business_id == business_id)
+                .where(ScheduleExceptionModel.date >= start_date.date())
+                .where(ScheduleExceptionModel.date <= end_date.date())
+            )
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error fetching schedule exceptions range: {e}")
+            raise
+
+
+    # Измнение статуса записи (для админки)
+    async def update_appointment_status(self, appointment: AppointmentModel, new_status: str) -> dict:
+        try:
+            appointment.status = new_status
+            return {"message": "Статус записи успешно обновлен"}
+        except Exception as e:
+            logger.error(f"Error updating appointment status: {e}")
+            raise
+
+
+    # Получаем неотмеченные записи (прошедшие со статусом scheduled)
+    async def get_unmarked_appointments(self, business_id: int) -> list[AppointmentModel]:
+        try:
+            result = await self.session.execute(
+                select(AppointmentModel).order_by(AppointmentModel.start_time.desc()).options(
+                    selectinload(AppointmentModel.client),
+                    selectinload(AppointmentModel.staff),
+                    selectinload(AppointmentModel.service)
+                )
+                .where(AppointmentModel.business_id == business_id)
+                .where(AppointmentModel.status == 'scheduled')
+                .where(AppointmentModel.end_time <= now_utc())
+            )
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error fetching unmarked appointments: {e}")
+            raise
+
+
+    # Создаем сотрудника
+    async def create_staff(self, business_id: int, name: str, role: str) -> StaffModel:
+        try:
+            new_staff = StaffModel(
+                name=name,
+                business_id=business_id,
+                role=role
+            )
+            self.session.add(new_staff)
+            return new_staff
+        except Exception as e:
+            logger.error(f"Error creating staff: {e}")
+            raise
+
+
+    # Удаляем сотрудника
+    async def delete_staff(self, business_id: int, staff_id: int) -> StaffModel:
+        try:
+            result = await self.session.execute(
+                select(StaffModel)
+                .where(StaffModel.id == staff_id)
+                .where(StaffModel.business_id == business_id)
+            )
+            staff = result.scalars().first()
+            if not staff:
+                return None
+            await self.session.delete(staff)
+            return staff
+        except Exception as e:
+            logger.error(f"Error deleting staff: {e}")
+            raise
+
+
+    # Создаем услугу
+    async def create_service(self, business_id: int, name: str, price: int, description: str, duration_minutes: int) -> ServiceModel:
+        try:
+            new_service = ServiceModel(
+                name=name,
+                business_id=business_id,
+                price=price,
+                description=description,
+                duration_minutes=duration_minutes
+            )
+            self.session.add(new_service)
+            return new_service
+        except Exception as e:
+            logger.error(f"Error creating service: {e}")
+            raise
+
+
+    # Удаляем услугу
+    async def delete_service(self, business_id: int, service_id: int) -> ServiceModel:
+        try:
+            result = await self.session.execute(
+                select(ServiceModel)
+                .where(ServiceModel.id == service_id)
+                .where(ServiceModel.business_id == business_id)
+            )
+            service = result.scalars().first()
+            if not service:
+                return None
+            await self.session.delete(service)
+            return service
+        except Exception as e:
+            logger.error(f"Error deleting service: {e}")
+            raise
+
+
+    # Создаем связь сотрудник-услуга
+    async def create_staff_service(self, business_id: int, staff_id: int, service_id: int) -> StaffServiceModel:
+        try:
+            new_staff_service = StaffServiceModel(
+                staff_id=staff_id,
+                service_id=service_id,
+                business_id=business_id
+            )
+            self.session.add(new_staff_service)
+            return new_staff_service
+        except Exception as e:
+            logger.error(f"Error creating staff service: {e}")
+            raise
+
+
+    # Получаем запись по ID для отмены админом
+    async def get_appointment_for_cancel(self, business_id: int, appointment_id: int) -> AppointmentModel:
+        try:
+            result = await self.session.execute(
+                select(AppointmentModel)
+                .options(selectinload(AppointmentModel.client))
+                .where(AppointmentModel.id == appointment_id)
+                .where(AppointmentModel.business_id == business_id)
+            )
+            return result.scalars().first()
+        except Exception as e:
+            logger.error(f"Error fetching appointment for cancel: {e}")
+            raise
+
+
+    # Создаем исключение в графике
+    async def create_schedule_exception(self, business_id: int, date: str, is_working: bool, custom_start: str = None, custom_end: str = None) -> ScheduleExceptionModel:
+        try:
+            from datetime import time
+            exc = ScheduleExceptionModel(
+                business_id=business_id,
+                date=datetime.strptime(date, "%Y-%m-%d").date(),
+                is_working=is_working
+            )
+            
+            if custom_start:
+                h, m = map(int, custom_start.split(':'))
+                exc.custom_start_time = time(h, m)
+            
+            if custom_end:
+                h, m = map(int, custom_end.split(':'))
+                exc.custom_end_time = time(h, m)
+            
+            self.session.add(exc)
+            return exc
+        except Exception as e:
+            logger.error(f"Error creating schedule exception: {e}")
+            raise
+
+
+    # Получаем все исключения в графике для бизнеса
+    async def get_all_schedule_exceptions(self, business_id: int) -> list[ScheduleExceptionModel]:
+        try:
+            result = await self.session.execute(
+                select(ScheduleExceptionModel)
+                .where(ScheduleExceptionModel.business_id == business_id)
+                .order_by(ScheduleExceptionModel.date)
+            )
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error fetching schedule exceptions: {e}")
+            raise
+
+
+    # Удаляем исключение в графике
+    async def delete_schedule_exception(self, business_id: int, exception_id: int) -> ScheduleExceptionModel:
+        try:
+            result = await self.session.execute(
+                select(ScheduleExceptionModel)
+                .where(ScheduleExceptionModel.id == exception_id)
+                .where(ScheduleExceptionModel.business_id == business_id)
+            )
+            exception = result.scalars().first()
+            if not exception:
+                return None
+            await self.session.delete(exception)
+            return exception
+        except Exception as e:
+            logger.error(f"Error deleting schedule exception: {e}")
             raise

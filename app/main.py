@@ -5,9 +5,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
-from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.routers.route import main_router
 from app.dev.dev_router import dev_router
@@ -51,18 +49,6 @@ app.include_router(dev_router)
 app.include_router(admin_router)
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        logger.info(f"{request.method} {request.url.path}")
-        try:
-            response = await call_next(request)
-            logger.info(f"Response: {response.status_code}")
-            return response
-        except Exception as e:
-            logger.error(f"Middleware error: {str(e)}")
-            raise
-
-app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,

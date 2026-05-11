@@ -17,6 +17,8 @@ async def get_free_slots(
     work_end: datetime = None,
     step_minutes: int = 30,
     timezone_offset: int = None,
+    business = None,
+    schedule_exception = None,
 ) -> list[str]:
     """
     Генерирует список свободных временных слотов для записи.
@@ -26,6 +28,8 @@ async def get_free_slots(
     1. Рабочее время (work_start, work_end) задано в ЛОКАЛЬНОМ времени бизнеса
     2. Все вычисления производятся в UTC
     3. Для сегодняшнего дня учитывается минимальный буфер времени
+    4. Учитываются перерывы (обеды)
+    5. Учитываются исключения в графике (кастомное рабочее время)
     
     Args:
         busy_slots: Список занятых слотов (в UTC)
@@ -35,6 +39,8 @@ async def get_free_slots(
         work_end: Время окончания работы (time объект в локальном времени)
         step_minutes: Шаг между слотами в минутах
         timezone_offset: Смещение timezone от UTC в часах (например, 3 для UTC+3)
+        business: Объект бизнеса (для получения break_start, break_end)
+        schedule_exception: Исключение в графике для этой даты
     
     Returns:
         Список свободных слотов в ISO формате (UTC)
@@ -50,34 +56,31 @@ async def get_free_slots(
         if timezone_offset is None:
             timezone_offset = config.timezone_offset
         
-        # Настраиваем рабочее время
-        # work_start и work_end это time объекты в ЛОКАЛЬНОМ времени бизнеса
-        # Нужно конвертировать их в UTC для корректных вычислений
-        
-        if work_start is None:
-            # По умолчанию 09:00 локально
-            work_start_hour_local = 9
-            work_start_minute_local = 0
+        # Определяем рабочее время
+        # Если есть исключение с кастомным временем - используем его
+        if schedule_exception and schedule_exception.custom_start_time and schedule_exception.custom_end_time:
+            work_start_hour_local = schedule_exception.custom_start_time.hour
+            work_start_minute_local = schedule_exception.custom_start_time.minute
+            work_end_hour_local = schedule_exception.custom_end_time.hour
+            work_end_minute_local = schedule_exception.custom_end_time.minute
         else:
-            # Извлекаем hour и minute из time объекта (это локальное время)
-            work_start_hour_local = work_start.hour
-            work_start_minute_local = work_start.minute
+            # Используем стандартное рабочее время
+            if work_start is None:
+                work_start_hour_local = 9
+                work_start_minute_local = 0
+            else:
+                work_start_hour_local = work_start.hour
+                work_start_minute_local = work_start.minute
+            
+            if work_end is None:
+                work_end_hour_local = 18
+                work_end_minute_local = 0
+            else:
+                work_end_hour_local = work_end.hour
+                work_end_minute_local = work_end.minute
         
-        if work_end is None:
-            # По умолчанию 18:00 локально
-            work_end_hour_local = 18
-            work_end_minute_local = 0
-        else:
-            # Извлекаем hour и minute из time объекта (это локальное время)
-            work_end_hour_local = work_end.hour
-            work_end_minute_local = work_end.minute
-        
-        # Создаем datetime для начала и конца рабочего дня в локальном времени
-        # date уже в UTC, но представляет начало дня (00:00:00)
-        # Нам нужно создать локальное время для этой даты, а затем конвертировать в UTC
-        
+        # Создаем datetime для начала и конца рабочего дня
         # Шаг 1: Получаем дату в локальном времени
-        # date в UTC 00:00:00 соответствует локальной дате + timezone_offset часов
         local_date = date + timedelta(hours=timezone_offset)
         
         # Шаг 2: Создаем локальное рабочее время
@@ -94,13 +97,28 @@ async def get_free_slots(
             microsecond=0
         )
         
-        # Шаг 3: Конвертируем локальное время в UTC (вычитаем offset)
+        # Шаг 3: Конвертируем локальное время в UTC
         work_start_time_utc = work_start_time_local - timedelta(hours=timezone_offset)
         work_end_time_utc = work_end_time_local - timedelta(hours=timezone_offset)
         
-        logger.info(f"Date (UTC): {date}, Local date: {local_date.date()}")
-        logger.info(f"Work hours (local): {work_start_hour_local}:00 - {work_end_hour_local}:00")
-        logger.info(f"Work hours (UTC): {work_start_time_utc} - {work_end_time_utc}")
+        # Получаем время перерыва (обеда) если есть
+        break_start_utc = None
+        break_end_utc = None
+        if business and business.break_start and business.break_end:
+            break_start_local = local_date.replace(
+                hour=business.break_start.hour,
+                minute=business.break_start.minute,
+                second=0,
+                microsecond=0
+            )
+            break_end_local = local_date.replace(
+                hour=business.break_end.hour,
+                minute=business.break_end.minute,
+                second=0,
+                microsecond=0
+            )
+            break_start_utc = break_start_local - timedelta(hours=timezone_offset)
+            break_end_utc = break_end_local - timedelta(hours=timezone_offset)
 
         # Генерируем список возможных стартовых точек в UTC
         candidate_slots = []
@@ -113,26 +131,31 @@ async def get_free_slots(
         
         # Для сегодняшнего дня учитываем минимальный буфер времени
         if is_today:
-            # Минимальное время для записи = текущее UTC время + буфер
             min_booking_time_utc = now + timedelta(minutes=config.min_booking_buffer_minutes)
-            logger.info(f"Today: current UTC time = {now}, min booking time (UTC) = {min_booking_time_utc}")
         
         while current_time_utc < work_end_time_utc:
             slot_end_utc = current_time_utc + timedelta(minutes=duration_minutes)
             
             # Проверяем что слот не выходит за рабочее время
             if slot_end_utc <= work_end_time_utc:
-                # Если это сегодня, проверяем что слот начинается после минимального времени
-                if is_today:
-                    if current_time_utc >= min_booking_time_utc:
+                # Проверяем что слот не пересекается с перерывом
+                slot_overlaps_break = False
+                if break_start_utc and break_end_utc:
+                    # Слот пересекается с перерывом если:
+                    # slot_start < break_end AND slot_end > break_start
+                    if current_time_utc < break_end_utc and slot_end_utc > break_start_utc:
+                        slot_overlaps_break = True
+                
+                if not slot_overlaps_break:
+                    # Если это сегодня, проверяем что слот начинается после минимального времени
+                    if is_today:
+                        if current_time_utc >= min_booking_time_utc:
+                            candidate_slots.append(current_time_utc)
+                    else:
+                        # Для будущих дней добавляем все слоты
                         candidate_slots.append(current_time_utc)
-                else:
-                    # Для будущих дней добавляем все слоты
-                    candidate_slots.append(current_time_utc)
             
             current_time_utc += timedelta(minutes=step_minutes)
-        
-        logger.info(f"Generated {len(candidate_slots)} candidate slots")
         
         # Фильтруем кандидатов: проверяем пересечения с занятыми слотами
         free_slots = []
@@ -155,7 +178,6 @@ async def get_free_slots(
             if is_free:
                 free_slots.append(slot_start_utc.isoformat())
         
-        logger.info(f"Found {len(free_slots)} free slots after filtering")
         return free_slots
     
     except Exception as e:

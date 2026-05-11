@@ -21,6 +21,7 @@ from app.models.staffs import StaffModel
 from app.models.service import ServiceModel
 from app.models.appointments import AppointmentModel
 from app.models.clients import ClientModel
+from app.models.schedule_exceptions import ScheduleExceptionModel
 
 dev_router = APIRouter(prefix="/dev", tags=["Developer"])
 
@@ -377,3 +378,215 @@ async def delete_appointment(
         return {"detail": "Appointment deleted successfully"}
     except Exception:
         raise
+
+
+"""----- Обновление графика работы бизнеса -----"""
+@dev_router.patch("/business/{business_id}/schedule/", dependencies=[Depends(verify_dev_api_key)])
+async def update_business_schedule(
+    session: SessionDep,
+    business_id: int,
+    break_start: str = None,  # "13:00"
+    break_end: str = None,    # "14:00"
+    weekend_days: list[int] = None  # [5, 6] для Сб и Вс (0=Пн, 6=Вс)
+) -> dict:
+    try:
+        from datetime import time
+        
+        business = await session.get(BusinessModel, business_id)
+        if not business:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        if break_start:
+            h, m = map(int, break_start.split(':'))
+            business.break_start = time(h, m)
+        
+        if break_end:
+            h, m = map(int, break_end.split(':'))
+            business.break_end = time(h, m)
+        
+        if weekend_days is not None:
+            business.weekend_days = weekend_days
+        
+        await session.commit()
+        await session.refresh(business)
+        
+        return {
+            "message": "Schedule updated",
+            "break_start": business.break_start.strftime("%H:%M") if business.break_start else None,
+            "break_end": business.break_end.strftime("%H:%M") if business.break_end else None,
+            "weekend_days": business.weekend_days
+        }
+    except Exception:
+        raise
+
+
+"""----- Создание исключения в графике -----"""
+@dev_router.post("/business/{business_id}/schedule-exception/", dependencies=[Depends(verify_dev_api_key)])
+async def create_schedule_exception(
+    session: SessionDep,
+    business_id: int,
+    date: str,  # "2026-05-09"
+    is_working: bool,
+    custom_start: str = None,  # "10:00"
+    custom_end: str = None     # "16:00"
+) -> dict:
+    try:
+        from datetime import datetime, time
+        
+        # Проверяем существование бизнеса
+        business = await session.get(BusinessModel, business_id)
+        if not business:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        exc = ScheduleExceptionModel(
+            business_id=business_id,
+            date=datetime.strptime(date, "%Y-%m-%d").date(),
+            is_working=is_working
+        )
+        
+        if custom_start:
+            h, m = map(int, custom_start.split(':'))
+            exc.custom_start_time = time(h, m)
+        
+        if custom_end:
+            h, m = map(int, custom_end.split(':'))
+            exc.custom_end_time = time(h, m)
+        
+        session.add(exc)
+        await session.commit()
+        await session.refresh(exc)
+        
+        return {
+            "message": "Exception created",
+            "id": exc.id,
+            "date": exc.date.strftime("%Y-%m-%d"),
+            "is_working": exc.is_working,
+            "custom_start_time": exc.custom_start_time.strftime("%H:%M") if exc.custom_start_time else None,
+            "custom_end_time": exc.custom_end_time.strftime("%H:%M") if exc.custom_end_time else None
+        }
+    except Exception:
+        raise
+
+
+"""----- Получение всех исключений в графике для бизнеса -----"""
+@dev_router.get("/business/{business_id}/schedule-exceptions/", dependencies=[Depends(verify_dev_api_key)])
+async def get_schedule_exceptions(
+    session: SessionDep,
+    business_id: int
+) -> list[dict]:
+    try:
+        result = await session.execute(
+            select(ScheduleExceptionModel)
+            .where(ScheduleExceptionModel.business_id == business_id)
+            .order_by(ScheduleExceptionModel.date)
+        )
+        exceptions = result.scalars().all()
+        
+        return [
+            {
+                "id": exc.id,
+                "date": exc.date.strftime("%Y-%m-%d"),
+                "is_working": exc.is_working,
+                "custom_start_time": exc.custom_start_time.strftime("%H:%M") if exc.custom_start_time else None,
+                "custom_end_time": exc.custom_end_time.strftime("%H:%M") if exc.custom_end_time else None
+            }
+            for exc in exceptions
+        ]
+    except Exception:
+        raise
+
+
+"""----- Удаление исключения в графике -----"""
+@dev_router.delete("/business/{business_id}/schedule-exception/{exception_id}", dependencies=[Depends(verify_dev_api_key)])
+async def delete_schedule_exception(
+    session: SessionDep,
+    business_id: int,
+    exception_id: int
+) -> dict:
+    try:
+        result = await session.execute(
+            select(ScheduleExceptionModel)
+            .where(ScheduleExceptionModel.id == exception_id)
+            .where(ScheduleExceptionModel.business_id == business_id)
+        )
+        exception = result.scalars().first()
+        
+        if not exception:
+            raise HTTPException(status_code=404, detail="Exception not found")
+        
+        await session.delete(exception)
+        await session.commit()
+        
+        return {"detail": "Exception deleted successfully"}
+    except Exception:
+        raise
+
+
+"""----- ВРЕМЕННЫЙ: Создание записи без проверок времени -----"""
+@dev_router.post("/test-appointment/", dependencies=[Depends(verify_dev_api_key)])
+async def create_test_appointment(
+    session: SessionDep,
+    business_id: int,
+    client_name: str,
+    staff_id: int,
+    service_id: int,
+    start_time: str,
+    end_time: str,
+    tg_id: int = 999999999
+) -> dict:
+    try:
+        from datetime import datetime
+        from app.utils.datetime_utils import to_naive_utc
+        
+        # Создаем или получаем клиента
+        result = await session.execute(
+            select(ClientModel)
+            .where(ClientModel.business_id == business_id)
+            .where(ClientModel.tg_id == tg_id)
+        )
+        client = result.scalars().first()
+        
+        if not client:
+            client = ClientModel(
+                business_id=business_id,
+                tg_id=tg_id,
+                name=client_name,
+                phone=None
+            )
+            session.add(client)
+            await session.flush()
+        
+        # Парсим время без валидации
+        start_dt = to_naive_utc(datetime.fromisoformat(start_time.replace('Z', '+00:00')))
+        end_dt = to_naive_utc(datetime.fromisoformat(end_time.replace('Z', '+00:00')))
+        
+        # Создаем запись напрямую
+        new_appointment = AppointmentModel(
+            business_id=business_id,
+            client_id=client.id,
+            client_name=client_name,
+            staff_id=staff_id,
+            service_id=service_id,
+            start_time=start_dt,
+            end_time=end_dt,
+            status="scheduled"
+        )
+        
+        session.add(new_appointment)
+        await session.commit()
+        await session.refresh(new_appointment)
+        
+        return {
+            "id": new_appointment.id,
+            "business_id": new_appointment.business_id,
+            "client_id": new_appointment.client_id,
+            "client_name": new_appointment.client_name,
+            "staff_id": new_appointment.staff_id,
+            "service_id": new_appointment.service_id,
+            "start_time": new_appointment.start_time.isoformat(),
+            "end_time": new_appointment.end_time.isoformat(),
+            "status": new_appointment.status
+        }
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
