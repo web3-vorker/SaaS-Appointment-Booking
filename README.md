@@ -1,3 +1,4 @@
+<img width="1536" height="1024" alt="SaaS System Architecture" src="https://github.com/user-attachments/assets/dd321d68-c289-469a-9bcf-e2540c42e48d" />
 # SaaS Appointment Booking System
 
 Сервис для записи клиентов к специалистам через Telegram ботов.
