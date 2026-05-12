@@ -1,8 +1,9 @@
 # Закрытые developer endpoints
 
+from datetime import time
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select
 
 from app.repository.repository import Repository
@@ -35,6 +36,14 @@ async def verify_dev_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -
         raise HTTPException(status_code=401, detail="Invalid developer key")
 
 
+"""----- Получение всех подключенных бизнесов -----"""
+@dev_router.get("/businesses/", dependencies=[Depends(verify_dev_api_key)])
+async def get_all_businesses(session: SessionDep) -> list:
+    result = await session.execute(select(BusinessModel))
+    businesses = result.scalars().all()
+    return [{"id": b.id, "name": b.name} for b in businesses]
+
+
 """----- Создание бизнеса через dev endpoint -----"""
 @dev_router.post("/business/", dependencies=[Depends(verify_dev_api_key)])
 async def create_business(
@@ -51,7 +60,6 @@ async def create_business(
             raise HTTPException(status_code=400, detail="Business with this name already exists")
 
         # Парсим время работы
-        from datetime import time
         start_hour, start_minute = map(int, business_data.working_hours_start.split(':'))
         end_hour, end_minute = map(int, business_data.working_hours_end.split(':'))
         
@@ -71,7 +79,6 @@ async def create_business(
             working_time_start=working_time_start,
             working_time_end=working_time_end,
             owner_tg_id=business_data.owner_tg_id,
-            bot_token=business_data.bot_token,
             api_key=api_key
         )
         session.add(new_business)
@@ -83,7 +90,6 @@ async def create_business(
             "working_time_start": new_business.working_time_start.strftime("%H:%M"),
             "working_time_end": new_business.working_time_end.strftime("%H:%M"),
             "owner_tg_id": new_business.owner_tg_id,
-            "bot_token": new_business.bot_token,
             "api_key": api_key
         }
     except Exception:
@@ -140,6 +146,30 @@ async def create_staff(
             "business_id": new_staff.business_id,
             "role": new_staff.role
         }
+    except Exception:
+        raise
+
+
+"""----- Получение всех сотрудников для бизнеса через dev endpoint -----"""
+@dev_router.get("/staffs/{business_id}", dependencies=[Depends(verify_dev_api_key)])
+async def get_staffs(
+    session: SessionDep,
+    business_id: int
+) -> list:
+    try:
+        result = await session.execute(
+            select(StaffModel).where(StaffModel.business_id == business_id)
+        )
+        staffs = result.scalars().all()
+        return [
+            {
+                "id": staff.id,
+                "name": staff.name,
+                "business_id": staff.business_id,
+                "role": staff.role
+            }
+            for staff in staffs
+        ]
     except Exception:
         raise
 
@@ -201,6 +231,32 @@ async def create_service(
             "description": new_service.description,
             "duration_minutes": new_service.duration_minutes
         }
+    except Exception:
+        raise
+
+
+"""----- Получение всех услуг для бизнеса через dev endpoint -----"""
+@dev_router.get("/services/{business_id}", dependencies=[Depends(verify_dev_api_key)])
+async def get_services(
+    session: SessionDep,
+    business_id: int
+) -> list:
+    try:
+        result = await session.execute(
+            select(ServiceModel).where(ServiceModel.business_id == business_id)
+        )
+        services = result.scalars().all()
+        return [
+            {
+                "id": service.id,
+                "name": service.name,
+                "business_id": service.business_id,
+                "price": service.price,
+                "description": service.description,
+                "duration_minutes": service.duration_minutes
+            }
+            for service in services
+        ]
     except Exception:
         raise
 
@@ -385,13 +441,11 @@ async def delete_appointment(
 async def update_business_schedule(
     session: SessionDep,
     business_id: int,
-    break_start: str = None,  # "13:00"
-    break_end: str = None,    # "14:00"
-    weekend_days: list[int] = None  # [5, 6] для Сб и Вс (0=Пн, 6=Вс)
+    break_start: str = None,
+    break_end: str = None,
+    weekend_days: list[int] = Query(None)
 ) -> dict:
     try:
-        from datetime import time
-        
         business = await session.get(BusinessModel, business_id)
         if not business:
             raise HTTPException(status_code=404, detail="Business not found")
@@ -520,73 +574,3 @@ async def delete_schedule_exception(
         return {"detail": "Exception deleted successfully"}
     except Exception:
         raise
-
-
-"""----- ВРЕМЕННЫЙ: Создание записи без проверок времени -----"""
-@dev_router.post("/test-appointment/", dependencies=[Depends(verify_dev_api_key)])
-async def create_test_appointment(
-    session: SessionDep,
-    business_id: int,
-    client_name: str,
-    staff_id: int,
-    service_id: int,
-    start_time: str,
-    end_time: str,
-    tg_id: int = 999999999
-) -> dict:
-    try:
-        from datetime import datetime
-        from app.utils.datetime_utils import to_naive_utc
-        
-        # Создаем или получаем клиента
-        result = await session.execute(
-            select(ClientModel)
-            .where(ClientModel.business_id == business_id)
-            .where(ClientModel.tg_id == tg_id)
-        )
-        client = result.scalars().first()
-        
-        if not client:
-            client = ClientModel(
-                business_id=business_id,
-                tg_id=tg_id,
-                name=client_name,
-                phone=None
-            )
-            session.add(client)
-            await session.flush()
-        
-        # Парсим время без валидации
-        start_dt = to_naive_utc(datetime.fromisoformat(start_time.replace('Z', '+00:00')))
-        end_dt = to_naive_utc(datetime.fromisoformat(end_time.replace('Z', '+00:00')))
-        
-        # Создаем запись напрямую
-        new_appointment = AppointmentModel(
-            business_id=business_id,
-            client_id=client.id,
-            client_name=client_name,
-            staff_id=staff_id,
-            service_id=service_id,
-            start_time=start_dt,
-            end_time=end_dt,
-            status="scheduled"
-        )
-        
-        session.add(new_appointment)
-        await session.commit()
-        await session.refresh(new_appointment)
-        
-        return {
-            "id": new_appointment.id,
-            "business_id": new_appointment.business_id,
-            "client_id": new_appointment.client_id,
-            "client_name": new_appointment.client_name,
-            "staff_id": new_appointment.staff_id,
-            "service_id": new_appointment.service_id,
-            "start_time": new_appointment.start_time.isoformat(),
-            "end_time": new_appointment.end_time.isoformat(),
-            "status": new_appointment.status
-        }
-    except Exception as e:
-        await session.rollback()
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

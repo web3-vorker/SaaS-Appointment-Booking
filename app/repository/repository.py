@@ -463,6 +463,19 @@ class Repository:
             raise
 
 
+    # Получаем сотрудника по id
+    async def get_staff_by_id(self, business_id: int, staff_id: int) -> StaffModel:
+        try:
+            result = await self.session.execute(
+                select(StaffModel)
+                .where(StaffModel.id == staff_id)
+                .where(StaffModel.business_id == business_id)
+            )
+            return result.scalars().first()
+        except Exception as e:
+            logger.error(f"Error fetching staff by id: {e}")
+            raise
+
     # Удаляем сотрудника
     async def delete_staff(self, business_id: int, staff_id: int) -> StaffModel:
         try:

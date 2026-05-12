@@ -15,8 +15,9 @@ def _event_payload_for_appointment(appointment: AppointmentModel) -> dict:
     return {
         "client_tg_id": appointment.client.tg_id,
         "text": (
-            f"⏰ Напоминание: у вас запись на {appointment.start_time.strftime('%d.%m.%Y %H:%M')} "
-            f"к {appointment.staff.name if appointment.staff else 'мастеру'}"
+            f"⏰ Напоминание: у вас запись на {appointment.start_time.strftime('%d.%m.%Y %H:%M')}\n"
+            f"Мастер: {appointment.staff.name if appointment.staff else 'не указан'}\n"
+            f"Услуга: {appointment.service.name if appointment.service else 'не указана'}"
         ),
     }
 

@@ -9,4 +9,3 @@ class BusinessCreateSchema(BaseModel):
   break_end: str = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
   weekend_days: str = Field(default=None, pattern=r"^(?:[1-7],)*[1-7]$")  # Например: "6,7" для выходных в субботу и воскресенье
   owner_tg_id: int
-  bot_token: Optional[str] = Field(default=None, min_length=10, max_length=255)

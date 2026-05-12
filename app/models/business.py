@@ -27,7 +27,6 @@ class BusinessModel(Base):
   
   created_at = Column(DateTime, default=datetime.now)
   is_active = Column(Boolean, default=True)
-  bot_token = Column(String, unique=True)
   owner_tg_id = Column(BigInteger, nullable=False)
   api_key = Column(String, default=lambda: str(uuid.uuid4()), unique=True)
 
