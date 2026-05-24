@@ -1,37 +1,35 @@
-# Endpoint'ы для работы с бизнесом, сотрудниками, клиентами и записями
+﻿# Endpoint'С‹ РґР»СЏ СЂР°Р±РѕС‚С‹ СЃ Р±РёР·РЅРµСЃРѕРј, СЃРѕС‚СЂСѓРґРЅРёРєР°РјРё, РєР»РёРµРЅС‚Р°РјРё Рё Р·Р°РїРёСЃСЏРјРё
 
-from datetime import datetime, timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Header
 
 from app.db.database import SessionDep
-from app.models.service import ServiceModel
 from app.models.business import BusinessModel
+from app.redis.limiter import rate_limiter
 from app.schemas.appointment import AppointmentCreateSchema
 from app.schemas.event import EventSchema
 from app.services.service import Service
 from app.repository.repository import Repository
-from app.utils.free_slots import get_free_slots
 from app.utils.logger import logger
-from app.redis.limiter import rate_limiter
-from app.utils.datetime_utils import now_utc
 
 
 main_router = APIRouter(prefix="/api/v1", tags=["API"])
 
 
-"""----- Проверка API Key -----"""
+"""----- РџСЂРѕРІРµСЂРєР° API Key -----"""
 async def get_current_business(session: SessionDep, x_api_key: str = Header(...)) -> BusinessModel:
     repository = Repository(session)
     service = Service(session, repository)
     business = await service.get_business_by_api_key(x_api_key)
     if not business:
         raise HTTPException(status_code=401, detail="Invalid API Key")
+    if not business.is_active:
+        raise HTTPException(status_code=403, detail={"error": "subscription_inactive", "message": "РР·РІРёРЅРёС‚Рµ, Р±РѕС‚ РІСЂРµРјРµРЅРЅРѕ РЅРµ РґРѕСЃС‚СѓРїРµРЅ.", "business_id": business.id})
     return business
     
     
-"""----- Получение услуг для бизнеса -----"""
-@main_router.get("/services/")
+"""----- РџРѕР»СѓС‡РµРЅРёРµ СѓСЃР»СѓРі РґР»СЏ Р±РёР·РЅРµСЃР° -----"""
+@main_router.get("/services/", dependencies=[Depends(rate_limiter(5, 20, "get_services"))])
 async def get_services(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -42,8 +40,8 @@ async def get_services(session: SessionDep, business: BusinessModel = Depends(ge
         raise    
     
 
-"""----- Получение мастеров для услуги -----"""
-@main_router.get("/services/{service_id}/staffs/")
+"""----- РџРѕР»СѓС‡РµРЅРёРµ РјР°СЃС‚РµСЂРѕРІ РґР»СЏ СѓСЃР»СѓРіРё -----"""
+@main_router.get("/services/{service_id}/staffs/", dependencies=[Depends(rate_limiter(5, 20, "get_service_staffs"))])
 async def get_service_staffs(session: SessionDep, service_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -54,8 +52,8 @@ async def get_service_staffs(session: SessionDep, service_id: int, business: Bus
         raise
 
 
-"""----- Получение свободных дней для сотрудника на месяц -----"""
-@main_router.get("/staffs/{staff_id}/free-days/")  # dependencies=[Depends(rate_limiter(30, 60, "free_days"))]
+"""----- РџРѕР»СѓС‡РµРЅРёРµ СЃРІРѕР±РѕРґРЅС‹С… РґРЅРµР№ РґР»СЏ СЃРѕС‚СЂСѓРґРЅРёРєР° РЅР° РјРµСЃСЏС† -----"""
+@main_router.get("/staffs/{staff_id}/free-days/", dependencies=[Depends(rate_limiter(5, 20, "free_days"))])
 async def get_free_days(
     session: SessionDep,
     staff_id: int,
@@ -71,8 +69,8 @@ async def get_free_days(
         raise    
     
 
-"""----- Получение свободных слотов для сотрудника в заданный день -----"""
-@main_router.get("/staffs/{staff_id}/free-slots/")  # dependencies=[Depends(rate_limiter(30, 60, "free_slots"))]
+"""----- РџРѕР»СѓС‡РµРЅРёРµ СЃРІРѕР±РѕРґРЅС‹С… СЃР»РѕС‚РѕРІ РґР»СЏ СЃРѕС‚СЂСѓРґРЅРёРєР° РІ Р·Р°РґР°РЅРЅС‹Р№ РґРµРЅСЊ -----"""
+@main_router.get("/staffs/{staff_id}/free-slots/", dependencies=[Depends(rate_limiter(5, 20, "free_slots"))]) 
 async def get_available_slots(
     session: SessionDep,
     staff_id: int,
@@ -89,12 +87,12 @@ async def get_available_slots(
     except HTTPException:
         raise    
     except Exception as e:
-        logger.error(f"Error in free_slots: {type(e).__name__} - {str(e)}", exc_info=True)
+        logger.error("error_in_free_slots", staff_id=staff_id, date=date, service_id=service_id, error=str(e), error_type=type(e).__name__, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
     
 
-"""----- Получение всех записей клиента -----"""
-@main_router.get("/clients/{client_id}/appointments/")  # dependencies=[Depends(rate_limiter(30, 60, "get_client_appointments"))]
+"""----- РџРѕР»СѓС‡РµРЅРёРµ РІСЃРµС… Р·Р°РїРёСЃРµР№ РєР»РёРµРЅС‚Р° -----"""
+@main_router.get("/clients/{client_id}/appointments/", dependencies=[Depends(rate_limiter(5, 20, "get_client_appointments"))])
 async def get_client_appointments(session: SessionDep, client_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -105,7 +103,7 @@ async def get_client_appointments(session: SessionDep, client_id: int, business:
         raise    
 
 
-"""----- Получение ожидающих отправки событий -----"""
+"""----- РџРѕР»СѓС‡РµРЅРёРµ РѕР¶РёРґР°СЋС‰РёС… РѕС‚РїСЂР°РІРєРё СЃРѕР±С‹С‚РёР№ -----"""
 @main_router.get("/events/", response_model=List[EventSchema])
 async def get_pending_events(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
@@ -118,7 +116,7 @@ async def get_pending_events(session: SessionDep, business: BusinessModel = Depe
 
 
 
-"""----- Пометить событие как отправленное -----"""
+"""----- РџРѕРјРµС‚РёС‚СЊ СЃРѕР±С‹С‚РёРµ РєР°Рє РѕС‚РїСЂР°РІР»РµРЅРЅРѕРµ -----"""
 @main_router.post("/events/{event_id}/mark-sent/")
 async def mark_event_sent(session: SessionDep, event_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
@@ -130,8 +128,8 @@ async def mark_event_sent(session: SessionDep, event_id: int, business: Business
         raise
 
 
-"""----- Создание новой записи -----"""
-@main_router.post("/appointments/create/")  # dependencies=[Depends(rate_limiter(10, 60, "create_appointment"))]
+"""----- РЎРѕР·РґР°РЅРёРµ РЅРѕРІРѕР№ Р·Р°РїРёСЃРё -----"""
+@main_router.post("/appointments/create/", dependencies=[Depends(rate_limiter(10, 60, "create_appointment"))]) 
 async def create_appointment(session: SessionDep, appointment_data: AppointmentCreateSchema, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -142,8 +140,8 @@ async def create_appointment(session: SessionDep, appointment_data: AppointmentC
         raise 
 
 
-"""----- Получение или создание клиента -----"""
-@main_router.post("/clients/get-or-create/")  # dependencies=[Depends(rate_limiter(20, 60, "get_or_create_client"))]
+"""----- РџРѕР»СѓС‡РµРЅРёРµ РёР»Рё СЃРѕР·РґР°РЅРёРµ РєР»РёРµРЅС‚Р° -----"""
+@main_router.post("/clients/get-or-create/", dependencies=[Depends(rate_limiter(20, 60, "get_or_create_client"))])
 async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str, phone: str = None, business: BusinessModel = Depends(get_current_business)) -> dict:
     try:
         repository = Repository(session)
@@ -154,13 +152,14 @@ async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str
         raise    
 
 
-"""----- Отмена записи клиента -----"""
-@main_router.post("/clients/{client_id}/appointments/{appointment_id}/")  # dependencies=[Depends(rate_limiter(10, 60, "cancel_appointment"))]
+"""----- РћС‚РјРµРЅР° Р·Р°РїРёСЃРё РєР»РёРµРЅС‚Р° -----"""
+@main_router.post("/clients/{client_id}/appointments/{appointment_id}/", dependencies=[Depends(rate_limiter(10, 60, "cancel_appointment"))])
 async def cancelled_appointment(session: SessionDep, client_id: int, appointment_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
         service = Service(session, repository)
         await service.cancelled_appointment(business.id, client_id, appointment_id)
-        return {"message": "Запись успешно отменена"}
+        return {"message": "Р—Р°РїРёСЃСЊ СѓСЃРїРµС€РЅРѕ РѕС‚РјРµРЅРµРЅР°"}
     except HTTPException:
         raise
+

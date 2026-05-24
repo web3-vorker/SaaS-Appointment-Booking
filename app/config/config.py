@@ -43,6 +43,11 @@ class Config:
     min_booking_buffer_minutes: int  # Минимальный буфер времени для записи (от текущего момента)
     free_days_lookahead: int  # На сколько дней вперед показывать свободные дни
     max_displayed_days: int  # Максимум дней для отображения в боте
+    
+    # Logging settings
+    log_level: str  # Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    log_file_path: str  # Путь к файлу логов
+    log_json_format: bool  # Использовать JSON формат для логов
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -80,6 +85,11 @@ class Config:
             min_booking_buffer_minutes=int(os.getenv("MIN_BOOKING_BUFFER_MINUTES", "30")),
             free_days_lookahead=int(os.getenv("FREE_DAYS_LOOKAHEAD", "30")),
             max_displayed_days=int(os.getenv("MAX_DISPLAYED_DAYS", "14")),
+            
+            # Logging settings
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_file_path=os.getenv("LOG_FILE_PATH", "logs/app.log"),
+            log_json_format=os.getenv("LOG_JSON_FORMAT", "true").lower() == "true",
         )
 
 

@@ -1,9 +1,12 @@
-import logging
+"""
+Backward compatibility wrapper для существующего кода
+Теперь использует structlog под капотом
+"""
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from app.utils.structured_logger import get_logger
 
-logger = logging.getLogger(__name__)
+# Экспортируем get_logger для нового кода
+__all__ = ["logger", "get_logger"]
+
+# Для обратной совместимости со старым кодом
+logger = get_logger(__name__)

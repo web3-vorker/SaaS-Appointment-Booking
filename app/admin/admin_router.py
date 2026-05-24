@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.database import SessionDep
+from app.redis.limiter import rate_limiter
 from app.repository.repository import Repository
 from app.routers.route import get_current_business
 from app.schemas.appointment import AppointmentCreateSchema
@@ -18,7 +19,7 @@ admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 """----- Получение услуг для бизнеса -----"""
-@admin_router.get("/services/")
+@admin_router.get("/services/", dependencies=[Depends(rate_limiter(5, 20, "get_services"))])
 async def get_services(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -30,7 +31,7 @@ async def get_services(session: SessionDep, business: BusinessModel = Depends(ge
     
 
 """----- Получение сотрудников бизнеса -----"""
-@admin_router.get("/staffs/")
+@admin_router.get("/staffs/", dependencies=[Depends(rate_limiter(5, 20, "get_staffs"))])
 async def get_staffs(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -42,7 +43,7 @@ async def get_staffs(session: SessionDep, business: BusinessModel = Depends(get_
 
 
 """----- Получение всех записей бизнеса -----"""
-@admin_router.get("/appointments/")
+@admin_router.get("/appointments/", dependencies=[Depends(rate_limiter(5, 20, "get_appointments"))])
 async def get_business_appointments(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -54,7 +55,7 @@ async def get_business_appointments(session: SessionDep, business: BusinessModel
 
 
 """----- Получение истории записей бизнеса -----"""
-@admin_router.get("/appointments/history/")
+@admin_router.get("/appointments/history/", dependencies=[Depends(rate_limiter(5, 20, "get_appointment_history"))])
 async def get_business_appointment_history(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
@@ -78,7 +79,7 @@ async def get_unmarked_appointments(session: SessionDep, business: BusinessModel
     
 
 """----- Создание сотрудника через admin endpoint -----"""
-@admin_router.post("/staff/")
+@admin_router.post("/staff/", dependencies=[Depends(rate_limiter(5, 20, "create_staff"))])
 async def create_staff(
     session: SessionDep,
     staff_data: StaffCreateSchema,
@@ -114,7 +115,7 @@ async def delete_staff(
 
 
 """----- Создание услуги через admin endpoint -----"""
-@admin_router.post("/service/")
+@admin_router.post("/service/", dependencies=[Depends(rate_limiter(5, 20, "create_service"))])
 async def create_service(
     session: SessionDep,
     service_data: ServiceCreateSchema,
@@ -156,7 +157,7 @@ async def delete_service(
     
 
 """----- Привязка услуги к сотруднику через admin endpoint -----"""
-@admin_router.post("/staff-service/")
+@admin_router.post("/staff-service/", dependencies=[Depends(rate_limiter(5, 20, "assign_service_to_staff"))])
 async def assign_service_to_staff(
     session: SessionDep,
     staff_service_data: StaffServiceCreateSchema
@@ -175,7 +176,7 @@ async def assign_service_to_staff(
 
 
 """----- Создание записи через admin endpoint -----"""
-@admin_router.post("/create-appointment/")
+@admin_router.post("/create-appointment/", dependencies=[Depends(rate_limiter(10, 60, "create_appointment"))])
 async def create_appointment(
     session: SessionDep,
     appointment_data: AppointmentCreateSchema,
@@ -226,7 +227,7 @@ async def create_schedule_exception(
 
 
 """----- Получение всех исключений в графике -----"""
-@admin_router.get("/schedule-exceptions/")
+@admin_router.get("/schedule-exceptions/", dependencies=[Depends(rate_limiter(5, 20, "get_schedule_exceptions"))])
 async def get_schedule_exceptions(
     session: SessionDep,
     business: BusinessModel = Depends(get_current_business)
@@ -241,7 +242,7 @@ async def get_schedule_exceptions(
 
 
 """----- Удаление исключения в графике -----"""
-@admin_router.delete("/schedule-exception/{exception_id}")
+@admin_router.delete("/schedule-exception/{exception_id}", dependencies=[Depends(rate_limiter(5, 20, "delete_schedule_exception"))])
 async def delete_schedule_exception(
     session: SessionDep,
     exception_id: int,
@@ -257,7 +258,7 @@ async def delete_schedule_exception(
     
 
 """----- Изменение статуса записи через admin endpoint -----"""
-@admin_router.post("/appointments/{appointment_id}/update-status/")
+@admin_router.post("/appointments/{appointment_id}/update-status/", dependencies=[Depends(rate_limiter(5, 20, "update_appointment_status"))])
 async def update_appointment_status(
     session: SessionDep, 
     appointment_id: int, 

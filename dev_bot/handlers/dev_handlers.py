@@ -108,13 +108,38 @@ async def show_business_actions(callback: CallbackQuery):
     """Показать действия для бизнеса"""
     business_id = int(callback.data.split("_")[1])
     
-    await callback.message.edit_text(
-        f"🏢 <b>Бизнес ID: {business_id}</b>\n\n"
-        f"Выберите действие:",
-        reply_markup=get_business_actions_keyboard(business_id),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+    try:
+        # Получаем информацию о бизнесе
+        businesses = await dev_api.get_all_businesses()
+        business = next((b for b in businesses if b['id'] == business_id), None)
+        
+        if not business:
+            await callback.message.edit_text(
+                "❌ Бизнес не найден",
+                reply_markup=get_back_to_menu_keyboard()
+            )
+            await callback.answer()
+            return
+        
+        is_active = business.get('is_active', True)
+        status_emoji = "🟢" if is_active else "🔴"
+        status_text = "Активен" if is_active else "Неактивен"
+        
+        await callback.message.edit_text(
+            f"🏢 <b>Бизнес: {business['name']}</b>\n"
+            f"ID: {business_id}\n"
+            f"Статус: {status_emoji} {status_text}\n\n"
+            f"Выберите действие:",
+            reply_markup=get_business_actions_keyboard(business_id, is_active),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=get_back_to_menu_keyboard()
+        )
+        await callback.answer()
 
 
 @router.callback_query(F.data.startswith("delete_business_"))
@@ -130,6 +155,42 @@ async def confirm_delete_business(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("toggle_active_"))
+async def toggle_business_active(callback: CallbackQuery):
+    """Переключить статус активности бизнеса"""
+    business_id = int(callback.data.split("_")[2])
+    
+    try:
+        result = await dev_api.toggle_business_active(business_id)
+        
+        # Обновляем отображение с новым статусом
+        businesses = await dev_api.get_all_businesses()
+        business = next((b for b in businesses if b['id'] == business_id), None)
+        
+        if business:
+            is_active = business.get('is_active', True)
+            status_emoji = "🟢" if is_active else "🔴"
+            status_text = "Активен" if is_active else "Неактивен"
+            
+            await callback.message.edit_text(
+                f"🏢 <b>Бизнес: {business['name']}</b>\n"
+                f"ID: {business_id}\n"
+                f"Статус: {status_emoji} {status_text}\n\n"
+                f"{result['message']}\n\n"
+                f"Выберите действие:",
+                reply_markup=get_business_actions_keyboard(business_id, is_active),
+                parse_mode="HTML"
+            )
+        
+        await callback.answer(result['message'])
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ Ошибка при изменении статуса:\n{str(e)}",
+            reply_markup=get_back_to_menu_keyboard()
+        )
+        await callback.answer()
 
 
 @router.callback_query(F.data.startswith("confirm_delete_staff_"))
@@ -1263,5 +1324,38 @@ async def list_exceptions(callback: CallbackQuery):
         reply_markup=get_back_to_menu_keyboard(),
         parse_mode="HTML"
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "health_check")
+async def health_check_handler(callback: CallbackQuery):
+    """Проверка работы системы"""
+    await callback.answer()
+    
+    try:
+        result = await dev_api.health_check()
+        
+        status_emoji = "✅" if result.get("status") == "ok" else "❌"
+        db_emoji = "✅" if result.get("database") == "ok" else "❌"
+        redis_emoji = "✅" if result.get("redis") == "ok" else "❌"
+        
+        text = (
+            f"🏥 <b>Проверка системы</b>\n\n"
+            f"{status_emoji} <b>Статус:</b> {result.get('status', 'unknown')}\n"
+            f"{db_emoji} <b>PostgreSQL:</b> {result.get('database', 'unknown')}\n"
+            f"{redis_emoji} <b>Redis:</b> {result.get('redis', 'unknown')}"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_back_to_menu_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка проверки системы</b>\n\n{str(e)}",
+            reply_markup=get_back_to_menu_keyboard(),
+            parse_mode="HTML"
+        )
     await callback.answer()
 

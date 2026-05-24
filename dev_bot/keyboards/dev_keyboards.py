@@ -14,6 +14,7 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛠️ Управление услугами", callback_data="manage_services")],
         [InlineKeyboardButton(text="🔗 Привязка услуг", callback_data="assign_services")],
         [InlineKeyboardButton(text="📅 Управление графиком", callback_data="manage_schedule")],
+        [InlineKeyboardButton(text="🔍 Проверка системы", callback_data="health_check")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -46,10 +47,12 @@ def get_business_list_keyboard(businesses: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_business_actions_keyboard(business_id: int) -> InlineKeyboardMarkup:
+def get_business_actions_keyboard(business_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
     """Действия с конкретным бизнесом"""
+    toggle_text = "🔴 Деактивировать" if is_active else "🟢 Активировать"
     keyboard = [
         [InlineKeyboardButton(text="ℹ️ Информация", callback_data=f"business_info_{business_id}")],
+        [InlineKeyboardButton(text=toggle_text, callback_data=f"toggle_active_{business_id}")],
         [InlineKeyboardButton(text="🗑️ Удалить бизнес", callback_data=f"delete_business_{business_id}")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="list_businesses")],
     ]

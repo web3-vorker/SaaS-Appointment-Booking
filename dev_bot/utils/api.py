@@ -47,6 +47,10 @@ class DevAPI:
     async def delete_business(self, business_id: int):
         """Удалить бизнес"""
         return await self._make_request("DELETE", f"/dev/business/{business_id}")
+    
+    async def toggle_business_active(self, business_id: int):
+        """Переключить статус активности бизнеса (активировать/деактивировать)"""
+        return await self._make_request("PATCH", f"/dev/business/{business_id}/deactivate")
 
     # ===== Сотрудники =====
     
@@ -141,6 +145,10 @@ class DevAPI:
     async def delete_schedule_exception(self, business_id: int, exception_id: int):
         """Удалить исключение в графике"""
         return await self._make_request("DELETE", f"/dev/business/{business_id}/schedule-exception/{exception_id}")
+    
+    async def health_check(self):
+        """Проверка работы системы (PostgreSQL, Redis)"""
+        return await self._make_request("GET", "/dev/health/")
 
 
 # Глобальный экземпляр API клиента

@@ -5,6 +5,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select
+from app.redis.limiter import get_redis_client
 
 from app.repository.repository import Repository
 from app.services.service import Service
@@ -41,7 +42,7 @@ async def verify_dev_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -
 async def get_all_businesses(session: SessionDep) -> list:
     result = await session.execute(select(BusinessModel))
     businesses = result.scalars().all()
-    return [{"id": b.id, "name": b.name} for b in businesses]
+    return [{"id": b.id, "name": b.name, "is_active": b.is_active} for b in businesses]
 
 
 """----- Создание бизнеса через dev endpoint -----"""
@@ -113,6 +114,33 @@ async def delete_business(
         await session.delete(business)
         await session.commit()
         return {"detail": "Business deleted successfully"}
+    except Exception:
+        raise
+
+
+"""----- Отключение бизнеса (деактивация) при истекании подписки через dev endpoint -----"""
+@dev_router.patch("/business/{business_id}/deactivate", dependencies=[Depends(verify_dev_api_key)])
+async def toggle_business_active(business_id: int, session: SessionDep) -> dict:
+    try:
+        result = await session.execute(
+            select(BusinessModel).where(BusinessModel.id == business_id)
+        )
+        business = result.scalars().first()
+        if not business:
+            raise HTTPException(status_code=404, detail="Business not found")
+
+        # Переключаем статус
+        business.is_active = not business.is_active
+        await session.commit()
+
+        status_text = "активирован" if business.is_active else "деактивирован"
+        emoji = "✅" if business.is_active else "🔴"
+
+        return {
+            "message": f"{emoji} Бизнес {status_text}",
+            "business_id": business.id,
+            "is_active": business.is_active
+        }
     except Exception:
         raise
 
@@ -574,3 +602,26 @@ async def delete_schedule_exception(
         return {"detail": "Exception deleted successfully"}
     except Exception:
         raise
+
+
+"""----- Проверка работы системы -----"""
+@dev_router.get("/health/", dependencies=[Depends(verify_dev_api_key)])
+async def health_check(session: SessionDep) -> dict:
+    result = {"status": "ok"}
+
+    try:
+        # Проверка PostgreSQL подключения
+        await session.execute(select(1))
+        result["database"] = "ok"
+
+        # Проверка Redis подключения
+        redis_client = await get_redis_client()
+        await redis_client.ping()
+        result["redis"] = "ok"
+
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+    
+    return result

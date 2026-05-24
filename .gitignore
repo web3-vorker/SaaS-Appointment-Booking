@@ -46,6 +46,8 @@ cache/
 
 # Logs
 *.log
+logs/
+logs/*.log
 
 # Docker
 docker-compose.override.yml
@@ -76,3 +78,10 @@ report.txt
 __init__.py
 scripts
 bot
+report.html
+
+# .md files
+*.md
+tests/unit/QUICKSTART.md
+!README.md
+!API_DOCUMENTATION.md

@@ -1,43 +1,81 @@
 version: '3.9'
 
 services:
+  # PostgreSQL база данных
   db:
     image: postgres:16
+    container_name: saas_postgres
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: saas_db
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Redis для rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: saas_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
   api:
     build:
       context: ..
       dockerfile: Docker/Dockerfile
+    container_name: saas_backend
+    restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
+      # Database
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/saas_db
-      API_KEY: test-api-key-12345
-      TELEGRAM_BOT_TOKEN: "replace-with-token"
-      TELEGRAM_PROXY: ""
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      
+      # API Keys
+      DEVELOPER_KEY: ${DEVELOPER_KEY:-your-developer-key-change-me}
+      
+      # Timezone
+      TIMEZONE_OFFSET: ${TIMEZONE_OFFSET:-3}
+      
+      # Scheduler settings
+      REMINDER_MINUTES_BEFORE: ${REMINDER_MINUTES_BEFORE:-60}
+      EVENT_CLEANUP_DAYS: ${EVENT_CLEANUP_DAYS:-7}
+      
+      # Booking settings
+      MIN_BOOKING_BUFFER_MINUTES: ${MIN_BOOKING_BUFFER_MINUTES:-30}
+      FREE_DAYS_LOOKAHEAD: ${FREE_DAYS_LOOKAHEAD:-30}
+      MAX_DISPLAYED_DAYS: ${MAX_DISPLAYED_DAYS:-14}
+      
+      # Python
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app
     ports:
       - "8000:8000"
-
-  worker:
-    build:
-      context: ..
-      dockerfile: Docker/Dockerfile
-    depends_on:
-      - db
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/saas_db
-      TELEGRAM_BOT_TOKEN: "replace-with-token"
-      TELEGRAM_PROXY: ""
-    command: [ "python", "scripts/reminder_worker.py" ]
+    command: ["/app/start.sh"]
 
 volumes:
-  db_data: {}
+  db_data:
+  redis_data:

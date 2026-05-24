@@ -1,4 +1,4 @@
-# Repository для работы с базой данных, инкапсулирующий логику доступа к данным и проверки бизнес-правил
+﻿# Repository РґР»СЏ СЂР°Р±РѕС‚С‹ СЃ Р±Р°Р·РѕР№ РґР°РЅРЅС‹С…, РёРЅРєР°РїСЃСѓР»РёСЂСѓСЋС‰РёР№ Р»РѕРіРёРєСѓ РґРѕСЃС‚СѓРїР° Рє РґР°РЅРЅС‹Рј Рё РїСЂРѕРІРµСЂРєРё Р±РёР·РЅРµСЃ-РїСЂР°РІРёР»
 
 from datetime import datetime, timedelta
 from sqlalchemy import select
@@ -23,16 +23,16 @@ class Repository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    # Получаем все бизнесы
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ Р±РёР·РЅРµСЃС‹
     async def get_all_businesses(self) -> list[BusinessModel]:
         try:
             result = await self.session.execute(select(BusinessModel))
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching businesses: {e}")
+            logger.error("error_fetching_businesses", error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
-    # Получаем список сотрудников для бизнеса
+    # РџРѕР»СѓС‡Р°РµРј СЃРїРёСЃРѕРє СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ РґР»СЏ Р±РёР·РЅРµСЃР°
     async def get_business_staffs(self, business_id: int) -> list[StaffModel]:
         try:
             staffs = await self.session.execute(
@@ -41,11 +41,11 @@ class Repository:
             )
             return staffs.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching business staffs: {e}")
+            logger.error("error_fetching_business_staffs", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем мастеров для услуги
+    # РџРѕР»СѓС‡Р°РµРј РјР°СЃС‚РµСЂРѕРІ РґР»СЏ СѓСЃР»СѓРіРё
     async def get_service_staffs(self, business_id: int, service_id: int) -> list[StaffModel]:
         try:
             staffs = await self.session.execute(
@@ -56,11 +56,11 @@ class Repository:
             )
             return staffs.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching service staffs: {e}")
+            logger.error("error_fetching_service_staffs", business_id=business_id, service_id=service_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
         
 
-    # Проверяем принадлежность клиента и сотрудника к бизнесу
+    # РџСЂРѕРІРµСЂСЏРµРј РїСЂРёРЅР°РґР»РµР¶РЅРѕСЃС‚СЊ РєР»РёРµРЅС‚Р° Рё СЃРѕС‚СЂСѓРґРЅРёРєР° Рє Р±РёР·РЅРµСЃСѓ
     async def client_and_staff_exists(self, business_id: int, client_id: int, staff_id: int) -> bool:
         try:
             client_result = await self.session.execute(
@@ -83,23 +83,23 @@ class Repository:
             return True
         
         except Exception as e:
-            logger.error(f"Error checking client and staff existence: {e}")
+            logger.error("error_checking_client_staff_existence", business_id=business_id, client_id=client_id, staff_id=staff_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Проверяем нет ли пересечений с существующими записями для этого сотрудника
+    # РџСЂРѕРІРµСЂСЏРµРј РЅРµС‚ Р»Рё РїРµСЂРµСЃРµС‡РµРЅРёР№ СЃ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёРјРё Р·Р°РїРёСЃСЏРјРё РґР»СЏ СЌС‚РѕРіРѕ СЃРѕС‚СЂСѓРґРЅРёРєР°
     async def has_overlapping_appointments(self, business_id: int, appointment_data: AppointmentCreateSchema) -> bool:
         try:
-            # Приводим к naive UTC
+            # РџСЂРёРІРѕРґРёРј Рє naive UTC
             start_time = to_naive_utc(appointment_data.start_time)
             end_time = to_naive_utc(appointment_data.end_time)
             
             result = await self.session.execute(
                 select(AppointmentModel)
-                .with_for_update()  # Блокируем строки для предотвращения race condition
+                .with_for_update()  # Р‘Р»РѕРєРёСЂСѓРµРј СЃС‚СЂРѕРєРё РґР»СЏ РїСЂРµРґРѕС‚РІСЂР°С‰РµРЅРёСЏ race condition
                 .where(AppointmentModel.business_id == business_id)
                 .where(AppointmentModel.staff_id == appointment_data.staff_id)
-                .where(AppointmentModel.status == 'scheduled')  # Проверяем только активные записи
+                .where(AppointmentModel.status == 'scheduled')  # РџСЂРѕРІРµСЂСЏРµРј С‚РѕР»СЊРєРѕ Р°РєС‚РёРІРЅС‹Рµ Р·Р°РїРёСЃРё
                 .where(
                     (AppointmentModel.start_time < end_time) &
                     (AppointmentModel.end_time > start_time)
@@ -108,20 +108,20 @@ class Repository:
             )
             return result.scalars().first() is not None
         except Exception as e:
-            logger.error(f"Error checking overlaps: {e}")
+            logger.error("error_checking_overlaps", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
         
 
-    # Получаем занятые слоты для сотрудника в заданный день
+    # РџРѕР»СѓС‡Р°РµРј Р·Р°РЅСЏС‚С‹Рµ СЃР»РѕС‚С‹ РґР»СЏ СЃРѕС‚СЂСѓРґРЅРёРєР° РІ Р·Р°РґР°РЅРЅС‹Р№ РґРµРЅСЊ
     async def get_busy_slots(self, business_id: int, staff_id: int, date: datetime) -> list[AppointmentModel]:
-        # Приводим к naive UTC
+        # РџСЂРёРІРѕРґРёРј Рє naive UTC
         date = to_naive_utc(date)
         
         start_of_day = datetime(date.year, date.month, date.day)
         next_day = start_of_day + timedelta(days=1)
 
         try:
-            # Загружаем только нужные поля - start_time и end_time
+            # Р—Р°РіСЂСѓР¶Р°РµРј С‚РѕР»СЊРєРѕ РЅСѓР¶РЅС‹Рµ РїРѕР»СЏ - start_time Рё end_time
             result = await self.session.execute(
                 select(AppointmentModel)
                 .where(AppointmentModel.business_id == business_id)
@@ -134,11 +134,11 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching busy slots: {e}")
+            logger.error("error_fetching_busy_slots", business_id=business_id, staff_id=staff_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
     
 
-    # Получаем все записи клиента
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ Р·Р°РїРёСЃРё РєР»РёРµРЅС‚Р°
     async def get_client_appointments(self, business_id: int, client_id: int) -> list[AppointmentModel]:
         try:
             result = await self.session.execute(
@@ -154,11 +154,11 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching client appointments: {e}")
+            logger.error("error_fetching_client_appointments_repo", business_id=business_id, client_id=client_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
     
     
-    # Получаем все записи бизнеса
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ Р·Р°РїРёСЃРё Р±РёР·РЅРµСЃР°
     async def get_business_appointments(self, business_id: int) -> list[AppointmentModel]:
         try:
             result = await self.session.execute(
@@ -175,11 +175,11 @@ class Repository:
             return result.scalars().all()
         
         except Exception as e:
-            logger.error(f"Error getting business appointments: {e}")
+            logger.error("error_getting_business_appointments", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем историю записей бизнеса (все записи, включая отмененные и прошедшие)
+    # РџРѕР»СѓС‡Р°РµРј РёСЃС‚РѕСЂРёСЋ Р·Р°РїРёСЃРµР№ Р±РёР·РЅРµСЃР° (РІСЃРµ Р·Р°РїРёСЃРё, РІРєР»СЋС‡Р°СЏ РѕС‚РјРµРЅРµРЅРЅС‹Рµ Рё РїСЂРѕС€РµРґС€РёРµ)
     async def get_business_appointment_history(self, business_id: int) -> list[AppointmentModel]:
         try:
             result = await self.session.execute(
@@ -193,11 +193,11 @@ class Repository:
 
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error getting business appointment history: {e}")
+            logger.error("error_getting_appointment_history", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
     
     
-    # Получаем все услуги бизнеса
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ СѓСЃР»СѓРіРё Р±РёР·РЅРµСЃР°
     async def get_business_services(self, business_id: int) -> list[ServiceModel]:
         try:
             result = await self.session.execute(
@@ -210,7 +210,7 @@ class Repository:
             raise
         
 
-    # Получаем услугу по id
+    # РџРѕР»СѓС‡Р°РµРј СѓСЃР»СѓРіСѓ РїРѕ id
     async def get_service_by_id(self, business_id: int, service_id: int) -> ServiceModel:
         try:
             result = await self.session.execute(
@@ -225,7 +225,7 @@ class Repository:
            raise
 
 
-    # Добавляем новую запись в базу данных
+    # Р”РѕР±Р°РІР»СЏРµРј РЅРѕРІСѓСЋ Р·Р°РїРёСЃСЊ РІ Р±Р°Р·Сѓ РґР°РЅРЅС‹С…
     async def add_appointment(self, appointment: AppointmentModel) -> AppointmentModel:
       try: 
         self.session.add(appointment)
@@ -235,7 +235,7 @@ class Repository:
         raise
       
 
-    # Получаем все ожидающие отправки события для бизнеса
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ РѕР¶РёРґР°СЋС‰РёРµ РѕС‚РїСЂР°РІРєРё СЃРѕР±С‹С‚РёСЏ РґР»СЏ Р±РёР·РЅРµСЃР°
     async def get_pending_events(self, business_id: int) -> list[EventModel]:
         try:
             result = await self.session.execute(
@@ -246,10 +246,10 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching pending events: {e}")
+            logger.error("error_fetching_pending_events_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
-    # Помечаем событие как отправленное
+    # РџРѕРјРµС‡Р°РµРј СЃРѕР±С‹С‚РёРµ РєР°Рє РѕС‚РїСЂР°РІР»РµРЅРЅРѕРµ
     async def mark_event_sent(self, event_id: int, business_id: int) -> EventModel:
         try:
             result = await self.session.execute(
@@ -263,21 +263,21 @@ class Repository:
             event.is_sent = True
             return event
         except Exception as e:
-            logger.error(f"Error marking event sent: {e}")
+            logger.error("error_marking_event_sent_repo", event_id=event_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Отмена записи клиента
+    # РћС‚РјРµРЅР° Р·Р°РїРёСЃРё РєР»РёРµРЅС‚Р°
     async def cancelled_appointment(self, appointment: AppointmentModel) -> dict:
         try:
             appointment.status = "cancelled"
             return {"success": "OK"}
         except Exception as e:
-            logger.error(f"Error cancelling appointment: {e}")
+            logger.error("error_cancelling_appointment_repo", error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-# Ищем запись по id
+# РС‰РµРј Р·Р°РїРёСЃСЊ РїРѕ id
     async def get_appointment_by_id(self, business_id: int, client_id: int, appointment_id: int) -> AppointmentModel:
       try:
         result = await self.session.execute(
@@ -296,15 +296,15 @@ class Repository:
         return result.scalars().first()
 
       except Exception as e:
-          logger.error(f"Error in get_appointment_by_id: {e}")
+          logger.error("error_get_appointment_by_id", business_id=business_id, client_id=client_id, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
           raise
       
       
-    # Получение или создание клиента
+    # РџРѕР»СѓС‡РµРЅРёРµ РёР»Рё СЃРѕР·РґР°РЅРёРµ РєР»РёРµРЅС‚Р°
     async def get_or_create_client(self, business_id: int, tg_id: int, client_name: str, phone: str = None) -> dict:
-    # Получаем клиента по tg_id и business_id, если нет - создаем нового
+    # РџРѕР»СѓС‡Р°РµРј РєР»РёРµРЅС‚Р° РїРѕ tg_id Рё business_id, РµСЃР»Рё РЅРµС‚ - СЃРѕР·РґР°РµРј РЅРѕРІРѕРіРѕ
       try:
-        # Валидируем и нормализуем телефон если он передан
+        # Р’Р°Р»РёРґРёСЂСѓРµРј Рё РЅРѕСЂРјР°Р»РёР·СѓРµРј С‚РµР»РµС„РѕРЅ РµСЃР»Рё РѕРЅ РїРµСЂРµРґР°РЅ
         normalized_phone = None
         if phone:
             normalized_phone = validate_phone(phone)
@@ -317,12 +317,12 @@ class Repository:
 
         client = result.scalars().first()
 
-        # Получаем бизнес, чтобы понять является ли пользователь владельцем
+        # РџРѕР»СѓС‡Р°РµРј Р±РёР·РЅРµСЃ, С‡С‚РѕР±С‹ РїРѕРЅСЏС‚СЊ СЏРІР»СЏРµС‚СЃСЏ Р»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІР»Р°РґРµР»СЊС†РµРј
         business = await self.get_business_by_id(business_id)
         is_owner = business and business.owner_tg_id == tg_id
 
         if client:
-            # Обновляем имя и телефон если они изменились
+            # РћР±РЅРѕРІР»СЏРµРј РёРјСЏ Рё С‚РµР»РµС„РѕРЅ РµСЃР»Рё РѕРЅРё РёР·РјРµРЅРёР»РёСЃСЊ
             updated = False
             if client.name != client_name:
                 client.name = client_name
@@ -341,16 +341,16 @@ class Repository:
         )
 
         self.session.add(new_client)
-        await self.session.flush()  # Flush для получения ID
+        await self.session.flush()  # Flush РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ ID
 
         return {"client": new_client, "is_owner": is_owner, "updated": False}
       
       except Exception as e:
-        logger.error(f"Error in get_or_create_client: {e}")
+        logger.error("error_get_or_create_client_repo", business_id=business_id, tg_id=tg_id, error=str(e), error_type=type(e).__name__, exc_info=True)
         raise
 
 
-    # Получаем бизнес по API Key
+    # РџРѕР»СѓС‡Р°РµРј Р±РёР·РЅРµСЃ РїРѕ API Key
     async def get_business_by_api_key(self, api_key: str) -> BusinessModel | None:
         try:
             result = await self.session.execute(
@@ -362,7 +362,7 @@ class Repository:
             raise
     
     
-    # Получаем бизнес по id
+    # РџРѕР»СѓС‡Р°РµРј Р±РёР·РЅРµСЃ РїРѕ id
     async def get_business_by_id(self, business_id: int) -> BusinessModel | None:
         try:
             result = await self.session.execute(
@@ -374,7 +374,7 @@ class Repository:
             raise
 
 
-    # Создаем новое событие
+    # РЎРѕР·РґР°РµРј РЅРѕРІРѕРµ СЃРѕР±С‹С‚РёРµ
     async def create_event(self, event_type: str, business_id: int, appointment_id: int, payload: dict) -> EventModel:
         try:
             event = EventModel(
@@ -386,11 +386,11 @@ class Repository:
             self.session.add(event)
             return event
         except Exception as e:
-            logger.error(f"Error creating event: {e}")
+            logger.error("error_creating_event", event_type=event_type, business_id=business_id, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем исключение в графике для конкретной даты
+    # РџРѕР»СѓС‡Р°РµРј РёСЃРєР»СЋС‡РµРЅРёРµ РІ РіСЂР°С„РёРєРµ РґР»СЏ РєРѕРЅРєСЂРµС‚РЅРѕР№ РґР°С‚С‹
     async def get_schedule_exception(self, business_id: int, date: datetime) -> ScheduleExceptionModel | None:
         try:
             result = await self.session.execute(
@@ -400,11 +400,11 @@ class Repository:
             )
             return result.scalars().first()
         except Exception as e:
-            logger.error(f"Error fetching schedule exception: {e}")
+            logger.error("error_fetching_schedule_exception", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем все исключения в графике для бизнеса в диапазоне дат
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ РёСЃРєР»СЋС‡РµРЅРёСЏ РІ РіСЂР°С„РёРєРµ РґР»СЏ Р±РёР·РЅРµСЃР° РІ РґРёР°РїР°Р·РѕРЅРµ РґР°С‚
     async def get_schedule_exceptions_range(self, business_id: int, start_date: datetime, end_date: datetime) -> list[ScheduleExceptionModel]:
         try:
             result = await self.session.execute(
@@ -415,21 +415,21 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching schedule exceptions range: {e}")
+            logger.error("error_fetching_schedule_exceptions_range", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Измнение статуса записи (для админки)
+    # РР·РјРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° Р·Р°РїРёСЃРё (РґР»СЏ Р°РґРјРёРЅРєРё)
     async def update_appointment_status(self, appointment: AppointmentModel, new_status: str) -> dict:
         try:
             appointment.status = new_status
-            return {"message": "Статус записи успешно обновлен"}
+            return {"message": "РЎС‚Р°С‚СѓСЃ Р·Р°РїРёСЃРё СѓСЃРїРµС€РЅРѕ РѕР±РЅРѕРІР»РµРЅ"}
         except Exception as e:
-            logger.error(f"Error updating appointment status: {e}")
+            logger.error("error_updating_appointment_status_repo", error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем неотмеченные записи (прошедшие со статусом scheduled)
+    # РџРѕР»СѓС‡Р°РµРј РЅРµРѕС‚РјРµС‡РµРЅРЅС‹Рµ Р·Р°РїРёСЃРё (РїСЂРѕС€РµРґС€РёРµ СЃРѕ СЃС‚Р°С‚СѓСЃРѕРј scheduled)
     async def get_unmarked_appointments(self, business_id: int) -> list[AppointmentModel]:
         try:
             result = await self.session.execute(
@@ -444,11 +444,11 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching unmarked appointments: {e}")
+            logger.error("error_fetching_unmarked_appointments_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Создаем сотрудника
+    # РЎРѕР·РґР°РµРј СЃРѕС‚СЂСѓРґРЅРёРєР°
     async def create_staff(self, business_id: int, name: str, role: str) -> StaffModel:
         try:
             new_staff = StaffModel(
@@ -459,11 +459,11 @@ class Repository:
             self.session.add(new_staff)
             return new_staff
         except Exception as e:
-            logger.error(f"Error creating staff: {e}")
+            logger.error("error_creating_staff_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем сотрудника по id
+    # РџРѕР»СѓС‡Р°РµРј СЃРѕС‚СЂСѓРґРЅРёРєР° РїРѕ id
     async def get_staff_by_id(self, business_id: int, staff_id: int) -> StaffModel:
         try:
             result = await self.session.execute(
@@ -473,10 +473,10 @@ class Repository:
             )
             return result.scalars().first()
         except Exception as e:
-            logger.error(f"Error fetching staff by id: {e}")
+            logger.error("error_fetching_staff_by_id", business_id=business_id, staff_id=staff_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
-    # Удаляем сотрудника
+    # РЈРґР°Р»СЏРµРј СЃРѕС‚СЂСѓРґРЅРёРєР°
     async def delete_staff(self, business_id: int, staff_id: int) -> StaffModel:
         try:
             result = await self.session.execute(
@@ -490,11 +490,11 @@ class Repository:
             await self.session.delete(staff)
             return staff
         except Exception as e:
-            logger.error(f"Error deleting staff: {e}")
+            logger.error("error_deleting_staff_repo", business_id=business_id, staff_id=staff_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Создаем услугу
+    # РЎРѕР·РґР°РµРј СѓСЃР»СѓРіСѓ
     async def create_service(self, business_id: int, name: str, price: int, description: str, duration_minutes: int) -> ServiceModel:
         try:
             new_service = ServiceModel(
@@ -507,11 +507,11 @@ class Repository:
             self.session.add(new_service)
             return new_service
         except Exception as e:
-            logger.error(f"Error creating service: {e}")
+            logger.error("error_creating_service_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Удаляем услугу
+    # РЈРґР°Р»СЏРµРј СѓСЃР»СѓРіСѓ
     async def delete_service(self, business_id: int, service_id: int) -> ServiceModel:
         try:
             result = await self.session.execute(
@@ -525,11 +525,11 @@ class Repository:
             await self.session.delete(service)
             return service
         except Exception as e:
-            logger.error(f"Error deleting service: {e}")
+            logger.error("error_deleting_service_repo", business_id=business_id, service_id=service_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Создаем связь сотрудник-услуга
+    # РЎРѕР·РґР°РµРј СЃРІСЏР·СЊ СЃРѕС‚СЂСѓРґРЅРёРє-СѓСЃР»СѓРіР°
     async def create_staff_service(self, business_id: int, staff_id: int, service_id: int) -> StaffServiceModel:
         try:
             new_staff_service = StaffServiceModel(
@@ -540,11 +540,11 @@ class Repository:
             self.session.add(new_staff_service)
             return new_staff_service
         except Exception as e:
-            logger.error(f"Error creating staff service: {e}")
+            logger.error("error_creating_staff_service_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем запись по ID для отмены админом
+    # РџРѕР»СѓС‡Р°РµРј Р·Р°РїРёСЃСЊ РїРѕ ID РґР»СЏ РѕС‚РјРµРЅС‹ Р°РґРјРёРЅРѕРј
     async def get_appointment_for_cancel(self, business_id: int, appointment_id: int) -> AppointmentModel:
         try:
             result = await self.session.execute(
@@ -555,11 +555,11 @@ class Repository:
             )
             return result.scalars().first()
         except Exception as e:
-            logger.error(f"Error fetching appointment for cancel: {e}")
+            logger.error("error_fetching_appointment_for_cancel", business_id=business_id, client_id=result.client_id, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Создаем исключение в графике
+    # РЎРѕР·РґР°РµРј РёСЃРєР»СЋС‡РµРЅРёРµ РІ РіСЂР°С„РёРєРµ
     async def create_schedule_exception(self, business_id: int, date: str, is_working: bool, custom_start: str = None, custom_end: str = None) -> ScheduleExceptionModel:
         try:
             from datetime import time
@@ -580,11 +580,11 @@ class Repository:
             self.session.add(exc)
             return exc
         except Exception as e:
-            logger.error(f"Error creating schedule exception: {e}")
+            logger.error("error_creating_schedule_exception_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Получаем все исключения в графике для бизнеса
+    # РџРѕР»СѓС‡Р°РµРј РІСЃРµ РёСЃРєР»СЋС‡РµРЅРёСЏ РІ РіСЂР°С„РёРєРµ РґР»СЏ Р±РёР·РЅРµСЃР°
     async def get_all_schedule_exceptions(self, business_id: int) -> list[ScheduleExceptionModel]:
         try:
             result = await self.session.execute(
@@ -594,11 +594,11 @@ class Repository:
             )
             return result.scalars().all()
         except Exception as e:
-            logger.error(f"Error fetching schedule exceptions: {e}")
+            logger.error("error_fetching_schedule_exceptions_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
-    # Удаляем исключение в графике
+    # РЈРґР°Р»СЏРµРј РёСЃРєР»СЋС‡РµРЅРёРµ РІ РіСЂР°С„РёРєРµ
     async def delete_schedule_exception(self, business_id: int, exception_id: int) -> ScheduleExceptionModel:
         try:
             result = await self.session.execute(
@@ -612,5 +612,13 @@ class Repository:
             await self.session.delete(exception)
             return exception
         except Exception as e:
-            logger.error(f"Error deleting schedule exception: {e}")
+            logger.error("error_deleting_schedule_exception_repo", business_id=business_id, exception_id=exception_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
+
+
+
+
+
+
+
+

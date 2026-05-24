@@ -21,8 +21,7 @@ class BusinessModel(Base):
   break_start = Column(Time, nullable=True)  # Начало перерыва
   break_end = Column(Time, nullable=True)    # Конец перерыва
   
-  # Выходные дни (список номеров дней недели: 0=Пн, 6=Вс)
-  # Хранится как JSON массив, например: [5, 6] для Сб и Вс
+  # Выходные дни
   weekend_days = Column(JSON, nullable=True, default=list)
   
   created_at = Column(DateTime, default=datetime.now)

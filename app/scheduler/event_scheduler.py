@@ -30,6 +30,12 @@ async def create_appointment_reminder_events():
     window_start = now + timedelta(minutes=reminder_minutes - 1)
     window_end = now + timedelta(minutes=reminder_minutes + 1)
 
+    logger.debug(
+        "scheduler_checking_reminders",
+        window_start=window_start.isoformat(),
+        window_end=window_end.isoformat(),
+    )
+
     async with new_session() as session:
         result = await session.execute(
             select(AppointmentModel)
@@ -40,6 +46,7 @@ async def create_appointment_reminder_events():
         )
         appointments = result.scalars().all()
 
+        created_count = 0
         for appointment in appointments:
             existing = await session.execute(
                 select(EventModel)
@@ -57,9 +64,23 @@ async def create_appointment_reminder_events():
                 payload=payload,
             )
             session.add(event)
-            logger.info(f"Created reminder event for appointment={appointment.id}")
+            created_count += 1
+            logger.info(
+                "reminder_event_created",
+                appointment_id=appointment.id,
+                business_id=appointment.business_id,
+                client_tg_id=appointment.client.tg_id,
+                start_time=appointment.start_time.isoformat(),
+            )
 
         await session.commit()
+        
+        if created_count > 0:
+            logger.info(
+                "reminders_batch_created",
+                count=created_count,
+                window_start=window_start.isoformat(),
+            )
 
 
 async def cleanup_old_events():
@@ -78,14 +99,26 @@ async def cleanup_old_events():
         await session.commit()
         
         if deleted_count > 0:
-            logger.info(f"Cleaned up {deleted_count} old events (older than 7 days)")
+            logger.info(
+                "old_events_cleaned",
+                count=deleted_count,
+                cutoff_date=cutoff_date.isoformat(),
+                retention_days=config.event_cleanup_days,
+            )
 
 
 async def event_scheduler_loop():
+    logger.info("event_scheduler_started", interval_seconds=60)
+    
     while True:
         try:
             await create_appointment_reminder_events()
             await cleanup_old_events()
         except Exception as exc:
-            logger.error(f"Event scheduler error: {exc}")
+            logger.error(
+                "event_scheduler_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                exc_info=True,
+            )
         await asyncio.sleep(60)

@@ -11,6 +11,18 @@ class DevBotConfig:
     telegram_bot_token: str
     developer_key: str
     api_url: str = os.getenv("API_URL", "http://localhost:8000")
+    
+    # Logging settings
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    log_file_path: str = os.getenv("LOG_FILE_PATH", "logs/dev_bot.log")
+    log_json_format: bool = os.getenv("LOG_JSON_FORMAT", "true").lower() == "true"
+    
+    # Error monitoring settings
+    error_monitor_enabled: bool = os.getenv("ERROR_MONITOR_ENABLED", "true").lower() == "true"
+    error_log_path: str = os.getenv("ERROR_LOG_PATH", "logs/error.log")
+    developer_tg_id: int = int(os.getenv("DEVELOPER_TG_ID", "0"))
+    alert_rate_limit_window: int = int(os.getenv("ALERT_RATE_LIMIT_WINDOW", "60"))
+    alert_max_per_window: int = int(os.getenv("ALERT_MAX_PER_WINDOW", "10"))
 
     @classmethod
     def from_env(cls) -> "DevBotConfig":
