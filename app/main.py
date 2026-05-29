@@ -15,9 +15,6 @@ from app.dev.dev_router import dev_router
 from app.admin.admin_router import admin_router
 from app.utils.structured_logger import setup_logging, get_logger
 from app.redis.limiter import close_redis
-from app.db.database import engine
-from app.models.base import Base
-import app.models.events
 from app.scheduler.event_scheduler import event_scheduler_loop
 from app.config.config import config
 

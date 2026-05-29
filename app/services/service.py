@@ -642,32 +642,34 @@ class Service:
   async def update_appointment_status(self, business_id: int, client_id: int, appointment_id: int, new_status: str) -> dict:
     try:
       # РџСЂРѕРІРµСЂСЏРµРј, С‡С‚Рѕ Р·Р°РїРёСЃСЊ РїСЂРёРЅР°РґР»РµР¶РёС‚ СЌС‚РѕРјСѓ Р±РёР·РЅРµСЃСѓ Рё РєР»РёРµРЅС‚Сѓ
-      appointment = await self.repository.get_appointment_by_id(business_id, client_id, appointment_id)
-      if not appointment:
-        logger.warning(
+        appointment = await self.repository.get_appointment_by_id(business_id, client_id, appointment_id)
+        if not appointment:
+          logger.warning(
             "appointment_status_update_failed_not_found",
             appointment_id=appointment_id,
             client_id=client_id,
             business_id=business_id,
-        )
-        raise HTTPException(status_code=404, detail="Appointment not found")
-      
-      # РћР±РЅРѕРІР»СЏРµРј СЃС‚Р°С‚СѓСЃ
-      result = await self.repository.update_appointment_status(appointment, new_status)
+          )
+          raise HTTPException(status_code=404, detail="Appointment not found")
 
-      # РћРґРёРЅ commit РґР»СЏ РІСЃРµР№ С‚СЂР°РЅР·Р°РєС†РёРё
-      await self.session.commit()
-      
-      logger.info(
+        # Сохраняем старый статус перед изменением
+        old_status = appointment.status
+
+        result = await self.repository.update_appointment_status(appointment, new_status)
+
+        # Один commit для всей транзакции
+        await self.session.commit()
+
+        logger.info(
           "appointment_status_updated",
           appointment_id=appointment_id,
           business_id=business_id,
-          old_status=appointment.status,
+          old_status=old_status,
           new_status=new_status,
-      )
-      await self.session.refresh(appointment)
+        )
+        await self.session.refresh(appointment)
 
-      return result
+        return result
 
     except HTTPException as http_exc:
       raise http_exc
@@ -716,6 +718,15 @@ class Service:
       return await self.repository.get_business_by_api_key(api_key)
     except Exception as e:
       logger.error("error_get_business_by_api_key", error=str(e), error_type=type(e).__name__, exc_info=True)
+      raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+
+  # Получение бизнеса по токену бота
+  async def get_business_by_bot_token(self, bot_token: str) -> BusinessModel | None:
+    try:
+      return await self.repository.get_business_by_bot_token(bot_token)
+    except Exception as e:
+      logger.error("error_get_business_by_bot_token", error=str(e), error_type=type(e).__name__, exc_info=True)
       raise HTTPException(status_code=500, detail="Internal Server Error")
 
 

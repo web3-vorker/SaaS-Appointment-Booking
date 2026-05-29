@@ -189,6 +189,7 @@ class Repository:
                     selectinload(AppointmentModel.service)
                 )
                 .where(AppointmentModel.business_id == business_id)
+                .where(AppointmentModel.end_time <= now_utc())
             )
 
             return result.scalars().all()
@@ -359,6 +360,7 @@ class Repository:
             )
             return result.scalars().first()
         except Exception as e:
+            logger.error("error_fetching_business_by_api_key_repo", api_key=api_key, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
     
     
@@ -371,6 +373,19 @@ class Repository:
             )
             return result.scalars().first()
         except Exception as e:
+            raise
+
+
+    # Получение бизнеса по токену бота
+    async def get_business_by_bot_token(self, bot_token: str) -> BusinessModel | None:
+        try:
+            result = await self.session.execute(
+                select(BusinessModel)
+                .where(BusinessModel.bot_token == bot_token)
+            )
+            return result.scalars().first()
+        except Exception as e:
+            logger.error("error_fetching_business_by_bot_token_repo", bot_token=bot_token, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 

@@ -26,6 +26,18 @@ async def get_current_business(session: SessionDep, x_api_key: str = Header(...)
     if not business.is_active:
         raise HTTPException(status_code=403, detail={"error": "subscription_inactive", "message": "РР·РІРёРЅРёС‚Рµ, Р±РѕС‚ РІСЂРµРјРµРЅРЅРѕ РЅРµ РґРѕСЃС‚СѓРїРµРЅ.", "business_id": business.id})
     return business
+
+
+"""----- Получение бизнеса по токену бота -----"""
+async def get_current_business_by_bot_token(session: SessionDep, x_bot_token: str = Header(...)) -> BusinessModel:
+    repository = Repository(session)
+    service = Service(session, repository)
+    business = await service.get_business_by_bot_token(x_bot_token)
+    if not business:
+        raise HTTPException(status_code=401, detail="Invalid Bot Token")
+    if not business.is_active:
+        raise HTTPException(status_code=403, detail={"error": "subscription_inactive", "message": "Sorry, your subscription is inactive.", "business_id": business.id})
+    return business
     
     
 """----- РџРѕР»СѓС‡РµРЅРёРµ СѓСЃР»СѓРі РґР»СЏ Р±РёР·РЅРµСЃР° -----"""
