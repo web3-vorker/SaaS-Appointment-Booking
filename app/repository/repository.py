@@ -189,7 +189,10 @@ class Repository:
                     selectinload(AppointmentModel.service)
                 )
                 .where(AppointmentModel.business_id == business_id)
-                .where(AppointmentModel.end_time <= now_utc())
+                .where(
+                    (AppointmentModel.end_time <= now_utc()) |
+                    (AppointmentModel.status == 'cancelled')
+                )
             )
 
             return result.scalars().all()
