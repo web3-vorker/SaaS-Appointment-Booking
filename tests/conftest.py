@@ -254,3 +254,25 @@ async def api_client(test_engine, mock_redis, monkeypatch):
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def service(db_session, mock_redis, monkeypatch):
+    """
+    Фикстура для Service с моками БД и Redis для unit-тестов.
+    """
+    from app.services.service import Service
+    from app.repository.repository import Repository
+    import app.redis.client as client_module
+    
+    # Подменяем Redis
+    monkeypatch.setattr(client_module, "redis_client", mock_redis)
+    monkeypatch.setattr(client_module, "get_redis_client", AsyncMock(return_value=mock_redis))
+    
+    # Создаем mock repository
+    mock_repository = AsyncMock(spec=Repository)
+    
+    # Создаем Service с мок-сессией и mock repository
+    service_instance = Service(session=db_session, repository=mock_repository)
+    
+    return service_instance

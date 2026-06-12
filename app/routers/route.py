@@ -11,7 +11,7 @@ from app.schemas.event import EventSchema
 from app.services.service import Service
 from app.repository.repository import Repository
 from app.utils.logger import logger
-from app.redis.cache import get_cache, set_cache
+from app.redis.cache import deserialize_business, get_cache, set_cache, serialize_business
 from app.redis.cache_keys import key_business_by_api_key, TTL_BUSINESS
 
 
@@ -28,7 +28,7 @@ async def get_current_business(session: SessionDep, x_api_key: str = Header(...)
         cached_business = await get_cache(key_business_by_api_key(x_api_key))
         if cached_business:
             logger.info(f"Cache hit for business by API Key, api_key: {x_api_key}")
-            return BusinessModel(**cached_business)
+            return BusinessModel(**deserialize_business(cached_business))
     except Exception as e:
         # Если ошибка кэша, просто логируем и продолжаем
         logger.warning(f"Cache read error for business: {e}")
@@ -41,7 +41,7 @@ async def get_current_business(session: SessionDep, x_api_key: str = Header(...)
     
     # Сохраняем бизнес в кэш Redis
     try:
-        await set_cache(key_business_by_api_key(x_api_key), business.dict(), TTL_BUSINESS)
+        await set_cache(key_business_by_api_key(x_api_key), serialize_business(business), TTL_BUSINESS)
     except Exception as e:
         # Если кэш недоступен, логируем но продолжаем (не критично)
         logger.warning(f"Cache write error for business: {e}")

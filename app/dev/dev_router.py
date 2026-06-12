@@ -506,7 +506,11 @@ async def update_business_schedule(
         
         if weekend_days is not None:
             business.weekend_days = weekend_days
-        
+
+        # Сбрасываем кэш
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+
         await session.commit()
         await session.refresh(business)
         
@@ -551,8 +555,19 @@ async def create_schedule_exception(
         if custom_end:
             h, m = map(int, custom_end.split(':'))
             exc.custom_end_time = time(h, m)
+
+        # Сбрасываем кэш
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
         
         session.add(exc)
+        
+        # Инвалидируем кэш свободных дней при создании исключения
+        try:
+            await cache_delete_pattern(pattern_all_free_days(business_id))
+        except Exception:
+            pass
+        
         await session.commit()
         await session.refresh(exc)
         
@@ -614,7 +629,18 @@ async def delete_schedule_exception(
         if not exception:
             raise HTTPException(status_code=404, detail="Exception not found")
         
+        # Сбрасываем кэш
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+
         await session.delete(exception)
+        
+        # Инвалидируем кэш свободных дней при удалении исключения
+        try:
+            await cache_delete_pattern(pattern_all_free_days(business_id))
+        except Exception:
+            pass
+        
         await session.commit()
         
         return {"detail": "Exception deleted successfully"}

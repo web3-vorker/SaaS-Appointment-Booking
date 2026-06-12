@@ -1,11 +1,20 @@
 # Ключи для кэширования в Redis и их TTL (время жизни)
 
 # TTL в секундах
+TTL_APPOINTMENTS = 120
 TTL_SERVICES = 600      # 10 минут — услуги меняются редко
 TTL_STAFFS = 600        # 10 минут — состав мастеров меняется редко
 TTL_FREE_SLOTS = 120    # 2 минуты — слоты меняются при каждой записи
 TTL_FREE_DAYS = 600     # 10 минут — свободные дни меняются редко
 TTL_BUSINESS = 300      # 5 минут — для валидации api_key
+
+
+def key_client_appointments(client_id: int, business_id: int) -> str:
+    return f"cache:client_appointments:client_id:{client_id}:business_id:{business_id}"
+
+
+def key_business_appointments(business_id: int) -> str:
+    return f"cache:business_appointments:business_id:{business_id}"
 
 
 def key_services(business_id: int) -> str:
