@@ -234,7 +234,7 @@ async def api_client(test_engine, mock_redis, monkeypatch):
     """
     from app.main import app
     import app.db.database as db_module
-    import app.redis.limiter as limiter_module
+    import app.redis.client as client_module
 
     # Подменяем сессию
     test_session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -246,8 +246,8 @@ async def api_client(test_engine, mock_redis, monkeypatch):
     app.dependency_overrides[db_module.get_session] = override_get_session
 
     # Подменяем Redis
-    monkeypatch.setattr(limiter_module, "redis_client", mock_redis)
-    monkeypatch.setattr(limiter_module, "get_redis_client", AsyncMock(return_value=mock_redis))
+    monkeypatch.setattr(client_module, "redis_client", mock_redis)
+    monkeypatch.setattr(client_module, "get_redis_client", AsyncMock(return_value=mock_redis))
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

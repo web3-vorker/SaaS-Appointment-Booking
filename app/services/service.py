@@ -12,6 +12,8 @@ from app.repository.repository import Repository
 from app.utils.datetime_utils import now_utc
 from app.utils.free_slots import get_free_slots
 from app.utils.logger import logger
+from app.redis.cache import get_cache, set_cache, delete_cache, cache_delete_pattern
+from app.redis.cache_keys import TTL_FREE_DAYS, TTL_FREE_SLOTS, TTL_STAFFS, key_free_days, key_free_slots, key_services, TTL_SERVICES, key_staffs_for_service, pattern_all_free_days, pattern_all_slots
 
 
 class Service:
@@ -51,6 +53,13 @@ class Service:
   # РџРѕР»СѓС‡Р°РµРј РјР°СЃС‚РµСЂРѕРІ РґР»СЏ СѓСЃР»СѓРіРё
   async def get_service_staffs(self, business_id: int, service_id: int) -> list[dict]:
     try:
+      # Проверяем кэш в Redis
+      cached_staffs = await get_cache(key_staffs_for_service(business_id, service_id))
+
+      if cached_staffs is not None:
+        logger.info(f"Cache hit for service staffs, business_id: {business_id}, service_id: {service_id}")
+        return cached_staffs
+
       staffs = await self.repository.get_service_staffs(business_id, service_id)
       if not staffs:
         return []
@@ -64,6 +73,9 @@ class Service:
           "role": staff.role,
           "business_id": staff.business_id
         })
+
+      # Сохраняем результат в кэш Redis
+      await set_cache(key_staffs_for_service(business_id, service_id), result, TTL_STAFFS)
       
       return result
     except Exception as e:
@@ -120,6 +132,15 @@ class Service:
         # Р•СЃР»Рё РґРµРЅСЊ РЅРµ СЂР°Р±РѕС‡РёР№ - РІРѕР·РІСЂР°С‰Р°РµРј РїСѓСЃС‚РѕР№ СЃРїРёСЃРѕРє
         if schedule_exception and not schedule_exception.is_working:
             return []
+
+        # Проверяем кэш в Redis
+        cached_slots = await get_cache(key_free_slots(business.id, staff_id, service_id, date))
+
+        if cached_slots is not None:
+            logger.info(f"Cache hit for free slots, business_id: {business.id}, staff_id: {staff_id}, service_id: {service_id}, date: {date}")
+            return cached_slots
+        
+        # Если кэша нет, получаем данные из базы данных и считаем свободные слоты
         
         busy_slots = await self.get_busy_slots(business.id, staff_id, date_obj)
         
@@ -132,6 +153,9 @@ class Service:
             business=business,
             schedule_exception=schedule_exception
         )
+
+        # Сохраняем результат в кэш Redis
+        await set_cache(key_free_slots(business.id, staff_id, service_id, date), free_slots, TTL_FREE_SLOTS)
 
         return free_slots
     except Exception as e:
@@ -149,6 +173,13 @@ class Service:
 
   # РџРѕР»СѓС‡Р°РµРј СЃРІРѕР±РѕРґРЅС‹Рµ РґРЅРё РґР»СЏ СЃРѕС‚СЂСѓРґРЅРёРєР° РЅР° РјРµСЃСЏС†
   async def get_free_days(self, business: BusinessModel, staff_id: int, service_id: int) -> list[dict]:
+        # Проверяем кэш в Redis
+        cached_free_days = await get_cache(key_free_days(business.id, staff_id, service_id))
+
+        if cached_free_days is not None:
+            logger.info(f"Cache hit for free days, business_id: {business.id}, staff_id: {staff_id}, service_id: {service_id}")
+            return cached_free_days
+
         # РќР°С‡РёРЅР°РµРј СЃ СЃРµРіРѕРґРЅСЏС€РЅРµРіРѕ РґРЅСЏ (naive UTC)
         today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
         free_days = []
@@ -214,6 +245,9 @@ class Service:
                     "slots_count": len(free_slots)
                 })
 
+        # Сохраняем результат в кэш Redis
+        await set_cache(key_free_days(business.id, staff_id, service_id), free_days, TTL_FREE_DAYS)
+
         return free_days
 
 
@@ -262,13 +296,22 @@ class Service:
   # РџРѕР»СѓС‡Р°РµРј РІСЃРµ СѓСЃР»СѓРіРё Р±РёР·РЅРµСЃР°
   async def get_business_services(self, business_id: int) -> list[dict]:
     try:
+      # Проверяем кэш в Redis
+      cache_key = key_services(business_id)
+      cached_services = await get_cache(cache_key)
+
+      if cached_services is not None:
+        logger.info(f"Cache hit for business services, business_id: {business_id}")
+        return cached_services
+      
+      # Если кэша нет, получаем данные из базы данных
       services = await self.repository.get_business_services(business_id)
 
       if not services:
         return []
 
-      # РЎРµСЂРёР°Р»РёР·СѓРµРј СѓСЃР»СѓРіРё (РѕРїС‚РёРјРёР·РёСЂРѕРІР°РЅРѕ С‡РµСЂРµР· list comprehension)
-      return [
+      # Сериализуем услуги, сохраняем в кэш Redis и возвращаем результат
+      serialized_services = [
         {
           "id": service.id,
           "name": service.name,
@@ -279,6 +322,10 @@ class Service:
         }
         for service in services
       ]
+
+      await set_cache(cache_key, serialized_services, TTL_SERVICES)
+
+      return serialized_services
       
     except Exception as e:
       logger.error("error_fetching_business_services", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
@@ -493,6 +540,10 @@ class Service:
             appointment_id=new_appointment.id,
             payload=event_payload
         )
+
+      # Сбрасываем кэш
+      await cache_delete_pattern(pattern_all_slots(new_appointment.business_id))
+      await cache_delete_pattern(pattern_all_free_days(new_appointment.business_id))
         
       # РћРґРёРЅ commit РґР»СЏ РІСЃРµР№ С‚СЂР°РЅР·Р°РєС†РёРё
       await self.session.commit()
@@ -564,6 +615,10 @@ class Service:
       end_time = appointment.end_time
 
       response = await self.repository.cancelled_appointment(appointment)
+
+      # Сбрасываем кэш
+      await cache_delete_pattern(pattern_all_slots(appointment.business_id))
+      await cache_delete_pattern(pattern_all_free_days(appointment.business_id))
       
       logger.info(
           "appointment_cancelled",
@@ -668,6 +723,14 @@ class Service:
           new_status=new_status,
         )
         await self.session.refresh(appointment)
+
+        # Инвалидация кэша при изменении статуса (слоты и свободные дни)
+        try:
+          if old_status != new_status:
+            await cache_delete_pattern(pattern_all_slots(business_id))
+            await cache_delete_pattern(pattern_all_free_days(business_id))
+        except Exception:
+          pass
 
         return result
 
@@ -776,6 +839,11 @@ class Service:
       new_staff = await self.repository.create_staff(business_id, name, role)
       await self.session.commit()
       await self.session.refresh(new_staff)
+      # Инвалидация кэша staff-for-service для бизнеса (на случай, если фронт кешировал список сотрудников)
+      try:
+        await cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
+      except Exception:
+        pass
       
       return {
         "id": new_staff.id,
@@ -783,6 +851,7 @@ class Service:
         "business_id": new_staff.business_id,
         "role": new_staff.role
       }
+    
     except Exception as e:
       logger.error("error_creating_staff", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
       await self.session.rollback()
@@ -795,7 +864,14 @@ class Service:
       staff = await self.repository.delete_staff(business_id, staff_id)
       if not staff:
         raise HTTPException(status_code=404, detail="Staff not found")
-      
+      # Сбрасываем кэш: слоты и свободные дни, а также кэш staff-for-service
+      try:
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
+      except Exception:
+        pass
+
       await self.session.commit()
       return {"detail": "Staff deleted successfully"}
     except HTTPException:
@@ -810,6 +886,15 @@ class Service:
   async def create_service_admin(self, business_id: int, name: str, price: int, description: str, duration_minutes: int) -> dict:
     try:
       new_service = await self.repository.create_service(business_id, name, price, description, duration_minutes)
+
+      # Сбрасываем кэш
+      try:
+        await delete_cache(key_services(business_id))
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+      except Exception:
+        pass
+
       await self.session.commit()
       await self.session.refresh(new_service)
       
@@ -834,6 +919,16 @@ class Service:
       if not service:
         raise HTTPException(status_code=404, detail="Service not found")
       
+      # Сбрасываем кэш
+      try:
+        await delete_cache(key_services(business_id))
+        # удаляем кэш staff-for-service для этого сервиса
+        await delete_cache(key_staffs_for_service(business_id, service_id))
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+      except Exception:
+        pass
+
       await self.session.commit()
       return {"detail": "Service deleted successfully"}
     except HTTPException:
@@ -858,6 +953,15 @@ class Service:
         raise HTTPException(status_code=404, detail="Service not found")
       
       new_staff_service = await self.repository.create_staff_service(business_id, staff_id, service_id)
+
+      # Сбрасываем кэш
+      try:
+        await delete_cache(key_staffs_for_service(business_id, service_id))
+        await cache_delete_pattern(pattern_all_slots(business_id))
+        await cache_delete_pattern(pattern_all_free_days(business_id))
+      except Exception:
+        pass
+
       await self.session.commit()
       await self.session.refresh(new_staff_service)
       
@@ -884,7 +988,12 @@ class Service:
       
       # РСЃРїРѕР»СЊР·СѓРµРј СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ РјРµС‚РѕРґ РѕС‚РјРµРЅС‹ СЃ С„Р»Р°РіРѕРј cancelled_by_admin
       await self.cancelled_appointment(business_id, appointment.client_id, appointment_id, cancelled_by_admin=True)
-      return {"message": "Р—Р°РїРёСЃСЊ СѓСЃРїРµС€РЅРѕ РѕС‚РјРµРЅРµРЅР°"}
+
+      # Сбрасываем кэш
+      await cache_delete_pattern(pattern_all_slots(business_id))
+      await cache_delete_pattern(pattern_all_free_days(business_id))
+
+      return {"message": "Appointment cancelled by admin successfully"}
     except HTTPException:
       raise
     except Exception as e:
@@ -949,11 +1058,3 @@ class Service:
       logger.error("error_deleting_schedule_exception", business_id=business_id, exception_id=exception_id, error=str(e), error_type=type(e).__name__, exc_info=True)
       await self.session.rollback()
       raise HTTPException(status_code=500, detail="Internal Server Error")
-    
-
-
-
-
-
-
-

@@ -14,7 +14,7 @@ from app.routers.route import main_router
 from app.dev.dev_router import dev_router
 from app.admin.admin_router import admin_router
 from app.utils.structured_logger import setup_logging, get_logger
-from app.redis.limiter import close_redis
+from app.redis.client import close_redis
 from app.scheduler.event_scheduler import event_scheduler_loop
 from app.config.config import config
 
@@ -146,4 +146,4 @@ async def http_exception_handler(request, exc):
 
 
 if __name__ == "__main__":
-  uvicorn.run("app.main:app", reload=True, workers=4)
+  uvicorn.run("app.main:app", reload=False, workers=4)

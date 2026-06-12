@@ -5,6 +5,13 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select
+from app.redis.cache import cache_delete_pattern, delete_cache
+from app.redis.cache_keys import (
+    pattern_all_slots,
+    pattern_all_free_days,
+    key_business_by_api_key,
+    key_services,
+)
 from app.redis.limiter import get_redis_client
 
 from app.repository.repository import Repository
@@ -112,6 +119,17 @@ async def delete_business(
             raise HTTPException(status_code=404, detail="Business not found")
 
         await session.delete(business)
+
+        # Сбрасываем кэш для этого бизнеса
+        try:
+            await cache_delete_pattern(pattern_all_slots(business_id))
+            await cache_delete_pattern(pattern_all_free_days(business_id))
+            await delete_cache(key_services(business_id))
+            if business.api_key:
+                await delete_cache(key_business_by_api_key(business.api_key))
+        except Exception:
+            pass
+
         await session.commit()
         return {"detail": "Business deleted successfully"}
     except Exception:

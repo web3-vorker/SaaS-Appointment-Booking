@@ -11,6 +11,8 @@ from app.schemas.event import EventSchema
 from app.services.service import Service
 from app.repository.repository import Repository
 from app.utils.logger import logger
+from app.redis.cache import get_cache, set_cache
+from app.redis.cache_keys import key_business_by_api_key, TTL_BUSINESS
 
 
 main_router = APIRouter(prefix="/api/v1", tags=["API"])
@@ -20,11 +22,30 @@ main_router = APIRouter(prefix="/api/v1", tags=["API"])
 async def get_current_business(session: SessionDep, x_api_key: str = Header(...)) -> BusinessModel:
     repository = Repository(session)
     service = Service(session, repository)
+
+    # Проверяем есть ли бизнес в кэше Redis по API Key
+    try:
+        cached_business = await get_cache(key_business_by_api_key(x_api_key))
+        if cached_business:
+            logger.info(f"Cache hit for business by API Key, api_key: {x_api_key}")
+            return BusinessModel(**cached_business)
+    except Exception as e:
+        # Если ошибка кэша, просто логируем и продолжаем
+        logger.warning(f"Cache read error for business: {e}")
+    
     business = await service.get_business_by_api_key(x_api_key)
     if not business:
         raise HTTPException(status_code=401, detail="Invalid API Key")
     if not business.is_active:
         raise HTTPException(status_code=403, detail={"error": "subscription_inactive", "message": "РР·РІРёРЅРёС‚Рµ, Р±РѕС‚ РІСЂРµРјРµРЅРЅРѕ РЅРµ РґРѕСЃС‚СѓРїРµРЅ.", "business_id": business.id})
+    
+    # Сохраняем бизнес в кэш Redis
+    try:
+        await set_cache(key_business_by_api_key(x_api_key), business.dict(), TTL_BUSINESS)
+    except Exception as e:
+        # Если кэш недоступен, логируем но продолжаем (не критично)
+        logger.warning(f"Cache write error for business: {e}")
+
     return business
 
 

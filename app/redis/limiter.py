@@ -2,27 +2,7 @@ from redis.asyncio import Redis
 from fastapi import Depends, HTTPException, Header, Request
 from time import time
 
-from app.config.config import config
-
-
-# Глобальный Redis клиент
-redis_client: Redis | None = None
-
-
-async def get_redis_client() -> Redis:
-    """Получить Redis клиент (создается один раз)"""
-    global redis_client
-    if redis_client is None:
-        redis_client = Redis.from_url(config.redis_url, decode_responses=True)
-    return redis_client
-
-
-async def close_redis():
-    """Закрыть Redis соединение при shutdown"""
-    global redis_client
-    if redis_client:
-        await redis_client.close()
-        redis_client = None
+from app.redis.client import get_redis_client
 
 
 class RateLimiter:
@@ -60,10 +40,17 @@ def rate_limiter(max_requests: int, time_window: int, endpoint: str):
         tg_id: int | None = Header(None, alias="X-TG-ID"),
         redis: Redis = Depends(get_redis_client)
     ):
-        identifier = str(tg_id) if tg_id is not None else request.client.host
-        limiter = RateLimiter(redis, max_requests, time_window)
+        try:
+            identifier = str(tg_id) if tg_id is not None else request.client.host
+            limiter = RateLimiter(redis, max_requests, time_window)
 
-        if await limiter.is_limited(identifier, endpoint):
-            raise HTTPException(status_code=429, detail="Too many requests")
+            if await limiter.is_limited(identifier, endpoint):
+                raise HTTPException(status_code=429, detail="Too many requests")
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Если Redis недоступен, логируем но не блокируем запрос
+            from app.utils.logger import logger
+            logger.error(f"Rate limiter error for {endpoint}", error=str(e))
 
     return dependency
