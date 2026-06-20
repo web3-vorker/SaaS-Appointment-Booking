@@ -1,7 +1,8 @@
 # Закрытые developer endpoints
 
-from datetime import time
+from datetime import time, timedelta
 import os
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.redis.cache_keys import (
     key_business_by_api_key,
     key_services,
 )
+from app.utils.datetime_utils import now_utc
 from app.redis.limiter import get_redis_client
 
 from app.repository.repository import Repository
@@ -49,7 +51,7 @@ async def verify_dev_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -
 async def get_all_businesses(session: SessionDep) -> list:
     result = await session.execute(select(BusinessModel))
     businesses = result.scalars().all()
-    return [{"id": b.id, "name": b.name, "is_active": b.is_active} for b in businesses]
+    return [{"id": b.id, "name": b.name, "is_active": b.is_active, "subscription_plan": b.subscription_plan, "subscription_expires_at": b.subscription_expires_at} for b in businesses]
 
 
 """----- Создание бизнеса через dev endpoint -----"""
@@ -79,7 +81,6 @@ async def create_business(
         if working_time_end <= working_time_start:
             raise HTTPException(status_code=400, detail="End time must be after start time")
 
-        import uuid
         api_key = str(uuid.uuid4())
 
         new_business = BusinessModel(
@@ -87,7 +88,9 @@ async def create_business(
             working_time_start=working_time_start,
             working_time_end=working_time_end,
             owner_tg_id=business_data.owner_tg_id,
-            api_key=api_key
+            api_key=api_key,
+            subscription_plan=business_data.subscription_plan or "Base",
+            subscription_expires_at= now_utc() + timedelta(days=config.subscription_duration)
         )
         session.add(new_business)
         await session.commit()
@@ -98,7 +101,9 @@ async def create_business(
             "working_time_start": new_business.working_time_start.strftime("%H:%M"),
             "working_time_end": new_business.working_time_end.strftime("%H:%M"),
             "owner_tg_id": new_business.owner_tg_id,
-            "api_key": api_key
+            "api_key": api_key,
+            "subscription_plan": new_business.subscription_plan,
+            "subscription_duration": config.subscription_duration,
         }
     except Exception:
         raise
@@ -148,7 +153,12 @@ async def toggle_business_active(business_id: int, session: SessionDep) -> dict:
             raise HTTPException(status_code=404, detail="Business not found")
 
         # Переключаем статус
-        business.is_active = not business.is_active
+        if business.is_active == False:
+            business.is_active = not business.is_active
+            business.subscription_expires_at= now_utc() + timedelta(days=config.subscription_duration)
+        else:
+            business.is_active = not business.is_active
+            
         await session.commit()
 
         status_text = "активирован" if business.is_active else "деактивирован"
@@ -159,6 +169,29 @@ async def toggle_business_active(business_id: int, session: SessionDep) -> dict:
             "business_id": business.id,
             "is_active": business.is_active
         }
+    except Exception:
+        raise
+
+
+"""----- Получение всех клиентов для бизнеса через dev endpoint -----"""
+@dev_router.get("/clients/{business_id}", dependencies=[Depends(verify_dev_api_key)])
+async def get_clients(
+    session: SessionDep,
+    business_id: int
+) -> list:
+    try:
+        result = await session.execute(
+            select(ClientModel).where(ClientModel.business_id == business_id)
+        )
+        clients = result.scalars().all()
+        return [
+            {
+                "id": client.id,
+                "name": client.name,
+                "business_id": client.business_id
+            }
+            for client in clients
+        ]
     except Exception:
         raise
 

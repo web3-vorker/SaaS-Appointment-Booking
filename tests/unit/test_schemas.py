@@ -122,6 +122,14 @@ class TestBusinessCreateSchema:
         assert schema.break_start == "13:00"
         assert schema.break_end == "14:00"
 
+    def test_subscription_plan_null_defaults_to_base(self):
+        schema = BusinessCreateSchema(
+            name="Салон", working_hours_start="09:00",
+            working_hours_end="20:00", owner_tg_id=123456789,
+            subscription_plan=None,
+        )
+        assert schema.subscription_plan == "Base"
+
 
 class TestServiceCreateSchema:
     """Тесты схемы создания услуги."""

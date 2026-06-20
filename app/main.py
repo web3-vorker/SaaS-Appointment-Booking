@@ -146,4 +146,4 @@ async def http_exception_handler(request, exc):
 
 
 if __name__ == "__main__":
-  uvicorn.run("app.main:app", reload=False, workers=4)
+  uvicorn.run("app.main:app", reload=True) # workers=4)

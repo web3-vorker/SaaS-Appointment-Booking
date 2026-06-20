@@ -10,7 +10,7 @@ class EventSchema(BaseModel):
     id: int
     type: str
     business_id: int
-    appointment_id: int
+    appointment_id: int | None = None
     payload: Dict[str, Any]  # Гибкий payload для разных типов событий
     is_sent: bool
     created_at: datetime

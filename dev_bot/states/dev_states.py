@@ -11,6 +11,7 @@ class CreateBusinessStates(StatesGroup):
     entering_working_hours_start = State()
     entering_working_hours_end = State()
     entering_owner_tg_id = State()
+    entering_subscription_plan = State()
 
 
 class CreateStaffStates(StatesGroup):

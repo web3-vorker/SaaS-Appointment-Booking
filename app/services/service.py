@@ -12,6 +12,7 @@ from app.repository.repository import Repository
 from app.utils.datetime_utils import now_utc
 from app.utils.free_slots import get_free_slots
 from app.utils.logger import logger
+from app.config.config import config
 from app.redis.cache import get_cache, set_cache, delete_cache, cache_delete_pattern
 from app.redis.cache_keys import TTL_APPOINTMENTS, TTL_FREE_DAYS, TTL_FREE_SLOTS, TTL_STAFFS, key_business_appointments, key_client_appointments, key_free_days, key_free_slots, key_services, TTL_SERVICES, key_staffs_for_service, pattern_all_free_days, pattern_all_slots
 
@@ -502,6 +503,17 @@ class Service:
       raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
+  # Проверка наличия других записей у клиента (защита от спама)
+  async def check_client_appointment_limit(self, business_id: int, client_tg_id: int) -> None:
+    active_appointments = await self.repository.get_client_appointments(business_id, client_tg_id)
+    
+    if len(active_appointments) >= config.max_active_appointments:
+        raise HTTPException(
+            status_code=409,
+            detail=f"У вас уже {len(active_appointments)} активных записей. Дождитесь их завершения или отмените одну из них."
+        )
+    
+
   # РЎРѕР·РґР°РµРј РЅРѕРІСѓСЋ Р·Р°РїРёСЃСЊ
   async def create_appointment(self, business_id: int, appointment_data: AppointmentCreateSchema) -> dict:
     try:
@@ -511,8 +523,10 @@ class Service:
       if not client_and_staff_exists:
         logger.warning("client_or_staff_not_belong", business_id=business_id, client_id=appointment_data.client_id, staff_id=appointment_data.staff_id)
         raise HTTPException(status_code=400, detail="Client or staff does not belong to this business")
+      
+      # Проверяем наличие у клиента других записей (защита от спама)
+      await self.check_client_appointment_limit(business_id, appointment_data.client_id)
 
-      # РџСЂРѕРІРµСЂСЏРµРј, РЅРµС‚ Р»Рё РїРµСЂРµСЃРµС‡РµРЅРёР№ СЃ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёРјРё Р·Р°РїРёСЃСЏРјРё РґР»СЏ СЌС‚РѕРіРѕ СЃРѕС‚СЂСѓРґРЅРёРєР°
       has_overlap = await self.repository.has_overlapping_appointments(business_id, appointment_data)
       if has_overlap:
         logger.warning(
@@ -1093,3 +1107,29 @@ class Service:
       logger.error("error_deleting_schedule_exception", business_id=business_id, exception_id=exception_id, error=str(e), error_type=type(e).__name__, exc_info=True)
       await self.session.rollback()
       raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+  # Получение данных о подписке для владельца бизнеса
+  async def get_subscription_info(self, business_id: int) -> dict:
+      try:
+          result = await self.repository.get_subscription_info(business_id)
+
+          expires_at_dt = result['subscription_expires_at']
+
+          if expires_at_dt:
+              expires_at_text = expires_at_dt.strftime("%d.%m.%Y")
+              subscription_days_left = (expires_at_dt - now_utc()).days
+          else:
+              expires_at_text = "Бессрочно"
+              subscription_days_left = None
+
+          return {
+              "subscription_plan": result['subscription_plan'],
+              "subscription_expires_at": expires_at_text,
+              "subscription_days_left": subscription_days_left,
+          }
+
+      except Exception as e:
+          logger.error("error_fetching_subscription_info", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
+          raise HTTPException(status_code=500, detail="Internal Server Error")
+      

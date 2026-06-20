@@ -29,6 +29,11 @@ class BusinessModel(Base):
   owner_tg_id = Column(BigInteger, nullable=False)
   api_key = Column(String, default=lambda: str(uuid.uuid4()), unique=True)
 
+  # Подписка
+  subscription_plan = Column(String, default="Base")  # Тарифный план (Base, Pro) 
+  subscription_expires_at = Column(DateTime, nullable=True)  # Дата истечения подписки (30 дней от даты активации)
+  subscription_notified_at = Column(DateTime, nullable=True)  # Дата уведомления о истечении подписки
+
   staffs = relationship('StaffModel', back_populates='business', cascade='all, delete')
   services = relationship('ServiceModel', back_populates='business', cascade='all, delete')
   clients = relationship('ClientModel', back_populates='business', cascade='all, delete')
