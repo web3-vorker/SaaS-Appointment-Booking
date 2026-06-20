@@ -33,6 +33,9 @@ def serialize_business(business) -> dict:
         "is_active": business.is_active,
         "owner_tg_id": business.owner_tg_id,
         "api_key": business.api_key,
+        "subscription_plan": business.subscription_plan,
+        "subscription_expires_at": business.subscription_expires_at.isoformat() if business.subscription_expires_at else None,
+        "subscription_notified_at": business.subscription_notified_at.isoformat() if business.subscription_notified_at else None,
     }
 
 

@@ -393,7 +393,7 @@ class Repository:
 
 
     # РЎРѕР·РґР°РµРј РЅРѕРІРѕРµ СЃРѕР±С‹С‚РёРµ
-    async def create_event(self, event_type: str, business_id: int, appointment_id: int, payload: dict) -> EventModel:
+    async def create_event(self, event_type: str, business_id: int, appointment_id: int | None, payload: dict) -> EventModel:
         try:
             event = EventModel(
                 type=event_type,
@@ -634,9 +634,21 @@ class Repository:
             raise
 
 
+    # Получение данных о подписке для владельца бизнеса
+    async def get_subscription_info(self, business_id: int) -> dict:
+        try:
+            result = await self.session.execute(
+                select(BusinessModel)
+                .where(BusinessModel.id == business_id)
+            )
 
+            business = result.scalars().first()
+            
+            return {"subscription_plan": business.subscription_plan,
+                    "subscription_expires_at": business.subscription_expires_at
+                }
 
-
-
-
+        except Exception as e:
+            logger.error("error_subscription_info_repo", business_id=business_id, error=str(e), error_type=type(e).__name__, exc_info=True)
+            raise
 

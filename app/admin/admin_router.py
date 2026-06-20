@@ -274,3 +274,19 @@ async def update_appointment_status(
         return result
     except HTTPException:
         raise
+
+
+"""----- Просмотр подписки -----"""
+@admin_router.get("/subscription_info/", dependencies=[Depends(rate_limiter(5, 20, "get_appointment_history"))])
+async def get_subscription_info(
+    session: SessionDep,
+    business: BusinessModel = Depends(get_current_business)
+) -> dict:
+    try:
+        repository = Repository(session)
+        service = Service(session, repository)
+        
+        result = await service.get_subscription_info(business.id)
+        return result
+    except HTTPException:
+        raise

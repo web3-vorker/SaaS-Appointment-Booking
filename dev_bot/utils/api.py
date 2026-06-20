@@ -34,7 +34,14 @@ class DevAPI:
         """Получить список всех бизнесов"""
         return await self._make_request("GET", "/dev/businesses/")
 
-    async def create_business(self, name: str, working_hours_start: str, working_hours_end: str, owner_tg_id: int):
+    async def create_business(
+        self,
+        name: str,
+        working_hours_start: str,
+        working_hours_end: str,
+        owner_tg_id: int,
+        subscription_plan: str = "Base",
+    ):
         """Создать новый бизнес"""
         data = {
             "name": name,
@@ -42,6 +49,8 @@ class DevAPI:
             "working_hours_end": working_hours_end,
             "owner_tg_id": owner_tg_id,
         }
+        if subscription_plan is not None:
+            data["subscription_plan"] = subscription_plan
         return await self._make_request("POST", "/dev/business/", json=data)
 
     async def delete_business(self, business_id: int):

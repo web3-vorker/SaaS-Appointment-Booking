@@ -2,6 +2,8 @@
 Обработчики команд для developer бота
 """
 
+from datetime import datetime
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
@@ -29,6 +31,7 @@ from dev_bot.states.dev_states import (
     CreateExceptionStates
 )
 from dev_bot.utils.api import dev_api
+from app.utils.datetime_utils import now_utc
 
 router = Router()
 
@@ -124,11 +127,22 @@ async def show_business_actions(callback: CallbackQuery):
         is_active = business.get('is_active', True)
         status_emoji = "🟢" if is_active else "🔴"
         status_text = "Активен" if is_active else "Неактивен"
+
+        subscription_expires_at = business.get('subscription_expires_at')
+
+        if subscription_expires_at:
+            expires_dt = datetime.fromisoformat(subscription_expires_at)  # строку → datetime
+            days_left = (expires_dt - now_utc()).days
+            subscription_info = f"Осталось дней подписки: {days_left}"
+        else:
+            subscription_info = "Подписка: бессрочная"
         
         await callback.message.edit_text(
             f"🏢 <b>Бизнес: {business['name']}</b>\n"
             f"ID: {business_id}\n"
-            f"Статус: {status_emoji} {status_text}\n\n"
+            f"Статус: {status_emoji} {status_text}\n"
+            f"Тарифный план: {business['subscription_plan']}\n"
+            f"{subscription_info}\n\n"
             f"Выберите действие:",
             reply_markup=get_business_actions_keyboard(business_id, is_active),
             parse_mode="HTML"
@@ -320,15 +334,39 @@ async def process_working_hours_end(message: Message, state: FSMContext):
 
 @router.message(CreateBusinessStates.entering_owner_tg_id)
 async def process_owner_tg_id(message: Message, state: FSMContext):
-    """Обработка Telegram ID владельца и создание бизнеса"""
+    """Обработка Telegram ID владельца"""
     if not message.text.isdigit():
         await message.answer("❌ Telegram ID должен быть числом!")
         return
     
     await state.update_data(owner_tg_id=int(message.text))
+    await state.set_state(CreateBusinessStates.entering_subscription_plan)
+    await message.answer(
+        "💰 Выберите тарифный план (Base или Pro):",
+        reply_markup=get_cancel_keyboard()
+    )
+
+
+@router.message(CreateBusinessStates.entering_subscription_plan)
+async def process_subscription_plan(message: Message, state: FSMContext):
+    """Обработка тарифного плана и создание бизнеса"""
+    if message.text not in ("Base", "Pro"):
+        await message.answer("❌ Неправильный тарифный план, выберите Base или Pro")
+        return
+
+    subscription_plan = message.text
+    await state.update_data(subscription_plan=subscription_plan)
 
     data = await state.get_data()
-    
+    if not all(key in data for key in ("name", "working_hours_start", "working_hours_end", "owner_tg_id")):
+        await state.clear()
+        await message.answer(
+            "❌ Ошибка при создании бизнеса: данные сессии оказались неполными. Попробуйте заново.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+
+    subscription_plan = data.get("subscription_plan") or "Base"
     # Создание бизнеса
     try:
         result = await dev_api.create_business(
@@ -336,15 +374,18 @@ async def process_owner_tg_id(message: Message, state: FSMContext):
             working_hours_start=data['working_hours_start'],
             working_hours_end=data['working_hours_end'],
             owner_tg_id=data['owner_tg_id'],
+            subscription_plan=subscription_plan
         )
         
         await state.clear()
         await message.answer(
             f"✅ <b>Бизнес успешно создан!</b>\n\n"
-            f"ID: {result['id']}\n"
-            f"Название: {result['name']}\n"
-            f"Рабочее время: {result['working_time_start']} - {result['working_time_end']}\n"
-            f"API Key: <code>{result['api_key']}</code>\n\n"
+            f"ID: {result.get('id')}\n"
+            f"Название: {result.get('name')}\n"
+            f"Рабочее время: {result.get('working_time_start')} - {result.get('working_time_end')}\n"
+            f"Тарифный план: {result.get('subscription_plan', 'Base')}\n"
+            f"Длительность подписки: {result.get('subscription_duration')} дней\n"
+            f"API Key: <code>{result.get('api_key')}</code>\n\n"
             f"⚠️ Сохраните API ключ! Он понадобится для настройки бота.",
             reply_markup=get_main_menu_keyboard(),
             parse_mode="HTML"

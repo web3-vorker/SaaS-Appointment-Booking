@@ -4,6 +4,9 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
 from app.db.database import new_session
+from app.models.business import BusinessModel
+from app.redis.cache import delete_cache
+from app.redis.cache_keys import key_business_by_api_key
 from app.utils.logger import logger
 from app.utils.datetime_utils import now_utc
 from app.models.appointments import AppointmentModel
@@ -107,6 +110,119 @@ async def cleanup_old_events():
             )
 
 
+async def deactivate_expired_subscriptions():
+    """Деактивирует бизнесы с истёкшей подпиской"""
+    now = now_utc()
+    
+    async with new_session() as session:
+        result = await session.execute(
+            select(BusinessModel)
+            .where(BusinessModel.is_active == True)
+            .where(BusinessModel.subscription_expires_at != None)
+            .where(BusinessModel.subscription_expires_at <= now)
+        )
+        businesses = result.scalars().all()
+        
+        for business in businesses:
+            business.is_active = False
+            
+            existing = await session.execute(
+                select(EventModel)
+                .where(EventModel.type == "subscription_expired")
+                .where(EventModel.business_id == business.id)
+                .where(EventModel.appointment_id == None)
+            )
+            if existing.scalars().first():
+                continue
+            
+            # Создаём событие — бот владельца его получит и уведомит
+            event = EventModel(
+                type="subscription_expired",
+                business_id=business.id,
+                appointment_id=None,
+                payload={
+                    "owner_tg_id": business.owner_tg_id,
+                    "business_name": business.name,
+                    "expired_at": business.subscription_expires_at.isoformat(),
+                    "subscription_plan": business.subscription_plan,
+                }
+            )
+            session.add(event)
+            
+            # Инвалидируем кэш бизнеса
+            try:
+                await delete_cache(key_business_by_api_key(business.api_key))
+            except Exception:
+                pass
+            
+            logger.info(
+                "subscription_expired_deactivated",
+                business_id=business.id,
+                business_name=business.name,
+                expired_at=business.subscription_expires_at.isoformat()
+            )
+        
+        await session.commit()
+
+
+async def notify_expiring_subscriptions():
+    """Уведомляет владельцев за N дней до истечения подписки"""
+    now = now_utc()
+    notify_before_days = config.notify_before_days 
+    notify_window = now + timedelta(days=notify_before_days)
+    
+    async with new_session() as session:
+        result = await session.execute(
+            select(BusinessModel)
+            .where(BusinessModel.is_active == True)
+            .where(BusinessModel.subscription_expires_at != None)
+            .where(BusinessModel.subscription_expires_at <= notify_window)
+            .where(BusinessModel.subscription_expires_at > now)
+            # Не уведомляли вообще ИЛИ уведомляли давно (> 24ч назад)
+            .where(
+                (BusinessModel.subscription_notified_at == None) |
+                (BusinessModel.subscription_notified_at <= now - timedelta(hours=24))
+            )
+        )
+        businesses = result.scalars().all()
+        
+        for business in businesses:
+            days_left = (business.subscription_expires_at - now).days
+            
+            existing = await session.execute(
+                select(EventModel)
+                .where(EventModel.type == "subscription_expiring_soon")
+                .where(EventModel.business_id == business.id)
+                .where(EventModel.appointment_id == None)
+                .where(EventModel.is_sent == False)
+            )
+            if existing.scalars().first():
+                continue
+
+            event = EventModel(
+                type="subscription_expiring_soon",
+                business_id=business.id,
+                appointment_id=None,
+                payload={
+                    "owner_tg_id": business.owner_tg_id,
+                    "business_name": business.name,
+                    "expires_at": business.subscription_expires_at.isoformat(),
+                    "subscription_plan": business.subscription_plan,
+                    "days_left": days_left
+                }
+            )
+            session.add(event)
+            business.subscription_notified_at = now
+            
+            logger.info(
+                "subscription_expiring_soon_notified",
+                business_id=business.id,
+                days_left=days_left
+            )
+        
+        await session.commit()
+
+
 async def event_scheduler_loop():
     logger.info("event_scheduler_started", interval_seconds=60)
     
@@ -114,6 +230,8 @@ async def event_scheduler_loop():
         try:
             await create_appointment_reminder_events()
             await cleanup_old_events()
+            await deactivate_expired_subscriptions()
+            await notify_expiring_subscriptions()
         except Exception as exc:
             logger.error(
                 "event_scheduler_error",

@@ -38,12 +38,17 @@ class Config:
     # Scheduler settings
     reminder_minutes_before: int  # За сколько минут до записи отправлять напоминание
     event_cleanup_days: int  # Через сколько дней удалять старые отправленные события
-    
+    notify_before_days: int  # За сколько дней до истечения подписки отправлять уведомление
+
+    # Subscription settings
+    subscription_duration: int
+
     # Booking settings
     min_booking_buffer_minutes: int  # Минимальный буфер времени для записи (от текущего момента)
     free_days_lookahead: int  # На сколько дней вперед показывать свободные дни
     max_displayed_days: int  # Максимум дней для отображения в боте
-    
+    max_active_appointments: int  # Максимум активных записей для клиента
+
     # Logging settings
     log_level: str  # Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     log_file_path: str  # Путь к файлу логов
@@ -78,13 +83,18 @@ class Config:
             notification_delay=5,
             
             # Scheduler settings
-            reminder_minutes_before=int(os.getenv("REMINDER_MINUTES_BEFORE", "60")),
+            reminder_minutes_before=int(os.getenv("REMINDER_MINUTES_BEFORE", "180")),
             event_cleanup_days=int(os.getenv("EVENT_CLEANUP_DAYS", "7")),
+            notify_before_days=int(os.getenv("NOTIFY_BEFORE_DAYS", "3")),
+
+            # Subscription settings
+            subscription_duration=int(os.getenv("SUBSCRIPTION_DURATION", "30")),
             
             # Booking settings
             min_booking_buffer_minutes=int(os.getenv("MIN_BOOKING_BUFFER_MINUTES", "30")),
             free_days_lookahead=int(os.getenv("FREE_DAYS_LOOKAHEAD", "30")),
             max_displayed_days=int(os.getenv("MAX_DISPLAYED_DAYS", "14")),
+            max_active_appointments=int(os.getenv("MAX_ACTIVE_APPOINTMENTS", "3")),
             
             # Logging settings
             log_level=os.getenv("LOG_LEVEL", "INFO"),
