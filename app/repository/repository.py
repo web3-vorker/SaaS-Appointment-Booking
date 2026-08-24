@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload, noload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.appointments import AppointmentModel
@@ -96,7 +96,7 @@ class Repository:
             
             result = await self.session.execute(
                 select(AppointmentModel)
-                .with_for_update()  # Р‘Р»РѕРєРёСЂСѓРµРј СЃС‚СЂРѕРєРё РґР»СЏ РїСЂРµРґРѕС‚РІСЂР°С‰РµРЅРёСЏ race condition
+                .with_for_update() # Защита от race conditions, блокируем строки для обновления
                 .where(AppointmentModel.business_id == business_id)
                 .where(AppointmentModel.staff_id == appointment_data.staff_id)
                 .where(AppointmentModel.status == 'scheduled')  # РџСЂРѕРІРµСЂСЏРµРј С‚РѕР»СЊРєРѕ Р°РєС‚РёРІРЅС‹Рµ Р·Р°РїРёСЃРё
@@ -258,6 +258,7 @@ class Repository:
         try:
             result = await self.session.execute(
                 select(EventModel)
+                .with_for_update()  # Защита от race conditions, блокируем строки для обновления
                 .where(EventModel.id == event_id)
                 .where(EventModel.business_id == business_id)
             )
@@ -571,9 +572,9 @@ class Repository:
                 .where(AppointmentModel.id == appointment_id)
                 .where(AppointmentModel.business_id == business_id)
             )
-            return result.scalars().first()
+            appointment = result.scalars().first()
         except Exception as e:
-            logger.error("error_fetching_appointment_for_cancel", business_id=business_id, client_id=result.client_id, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
+            logger.error("error_fetching_appointment_for_cancel", business_id=business_id, client_id=result.client_id if appointment else None, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise
 
 
