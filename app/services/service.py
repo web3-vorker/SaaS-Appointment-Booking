@@ -626,7 +626,7 @@ class Service:
       )
       await self.session.rollback()
       raise HTTPException(status_code=500, detail="Internal Server Error")
-    
+
 
   # РћС‚РјРµРЅР° Р·Р°РїРёСЃСЊ
   async def cancelled_appointment(self, business_id: int, client_id: int, appointment_id: int, cancelled_by_admin: bool = False) -> dict:

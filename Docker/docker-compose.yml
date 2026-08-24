@@ -15,7 +15,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,7 +30,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,31 +50,22 @@ services:
     environment:
       # Database
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/saas_db
-      
+
       # Redis
       REDIS_URL: redis://redis:6379/0
-      
+
       # API Keys
       DEVELOPER_KEY: ${DEVELOPER_KEY:-your-developer-key-change-me}
-      
+
       # Timezone
       TIMEZONE_OFFSET: ${TIMEZONE_OFFSET:-3}
-      
-      # Scheduler settings
-      REMINDER_MINUTES_BEFORE: ${REMINDER_MINUTES_BEFORE:-60}
-      EVENT_CLEANUP_DAYS: ${EVENT_CLEANUP_DAYS:-7}
-      
-      # Booking settings
-      MIN_BOOKING_BUFFER_MINUTES: ${MIN_BOOKING_BUFFER_MINUTES:-30}
-      FREE_DAYS_LOOKAHEAD: ${FREE_DAYS_LOOKAHEAD:-30}
-      MAX_DISPLAYED_DAYS: ${MAX_DISPLAYED_DAYS:-14}
-      
+
       # Python
       PYTHONUNBUFFERED: 1
       PYTHONPATH: /app
     ports:
       - "8000:8000"
-    command: ["/app/start.sh"]
+    command: [ "/app/start.sh" ]
 
 volumes:
   db_data:
