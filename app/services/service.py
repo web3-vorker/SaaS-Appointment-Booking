@@ -7,20 +7,21 @@ from app.models.clients import ClientModel
 from app.models.service import ServiceModel
 from app.models.staffs import StaffModel
 from app.models.business import BusinessModel
+from app.redis.cache import CacheProtocol
 from app.schemas.appointment import AppointmentCreateSchema
 from app.repository.repository import Repository
 from app.utils.datetime_utils import now_utc
 from app.utils.free_slots import get_free_slots
 from app.utils.logger import logger
 from app.config.config import config
-from app.redis.cache import get_cache, set_cache, delete_cache, cache_delete_pattern
 from app.redis.cache_keys import TTL_APPOINTMENTS, TTL_FREE_DAYS, TTL_FREE_SLOTS, TTL_STAFFS, key_business_appointments, key_client_appointments, key_free_days, key_free_slots, key_services, TTL_SERVICES, key_staffs_for_service, pattern_all_free_days, pattern_all_slots
 
 
 class Service:
-  def __init__(self, session: AsyncSession, repository: Repository):
+  def __init__(self, session: AsyncSession, repository: Repository, cache: CacheProtocol):
       self.session = session
       self.repository = repository
+      self.cache = cache
 
 
   # РџРѕР»СѓС‡Р°РµРј СЃРїРёСЃРѕРє СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ РґР»СЏ Р±РёР·РЅРµСЃР°
@@ -55,7 +56,7 @@ class Service:
   async def get_service_staffs(self, business_id: int, service_id: int) -> list[dict]:
     try:
       # Проверяем кэш в Redis
-      cached_staffs = await get_cache(key_staffs_for_service(business_id, service_id))
+      cached_staffs = await self.cache.get_cache(key_staffs_for_service(business_id, service_id))
 
       if cached_staffs is not None:
         logger.info(f"Cache hit for service staffs, business_id: {business_id}, service_id: {service_id}")
@@ -76,7 +77,7 @@ class Service:
         })
 
       # Сохраняем результат в кэш Redis
-      await set_cache(key_staffs_for_service(business_id, service_id), result, TTL_STAFFS)
+      await self.cache.set_cache(key_staffs_for_service(business_id, service_id), result, TTL_STAFFS)
       
       return result
     except Exception as e:
@@ -114,7 +115,7 @@ class Service:
   async def get_available_slots(self, business: BusinessModel, staff_id: int, service_id: int, date: str) -> list[dict]:
     try:
         # Проверяем кэш в Redis
-        cached_slots = await get_cache(key_free_slots(business.id, staff_id, service_id, date))
+        cached_slots = await self.cache.get_cache(key_free_slots(business.id, staff_id, service_id, date))
 
         if cached_slots is not None:
             logger.info(f"Cache hit for free slots, business_id: {business.id}, staff_id: {staff_id}, service_id: {service_id}, date: {date}")
@@ -156,7 +157,7 @@ class Service:
         )
 
         # Сохраняем результат в кэш Redis
-        await set_cache(key_free_slots(business.id, staff_id, service_id, date), free_slots, TTL_FREE_SLOTS)
+        await self.cache.set_cache(key_free_slots(business.id, staff_id, service_id, date), free_slots, TTL_FREE_SLOTS)
 
         return free_slots
     except Exception as e:
@@ -175,7 +176,7 @@ class Service:
   # РџРѕР»СѓС‡Р°РµРј СЃРІРѕР±РѕРґРЅС‹Рµ РґРЅРё РґР»СЏ СЃРѕС‚СЂСѓРґРЅРёРєР° РЅР° РјРµСЃСЏС†
   async def get_free_days(self, business: BusinessModel, staff_id: int, service_id: int) -> list[dict]:
         # Проверяем кэш в Redis
-        cached_free_days = await get_cache(key_free_days(business.id, staff_id, service_id))
+        cached_free_days = await self.cache.get_cache(key_free_days(business.id, staff_id, service_id))
 
         if cached_free_days is not None:
             logger.info(f"Cache hit for free days, business_id: {business.id}, staff_id: {staff_id}, service_id: {service_id}")
@@ -247,7 +248,7 @@ class Service:
                 })
 
         # Сохраняем результат в кэш Redis
-        await set_cache(key_free_days(business.id, staff_id, service_id), free_days, TTL_FREE_DAYS)
+        await self.cache.set_cache(key_free_days(business.id, staff_id, service_id), free_days, TTL_FREE_DAYS)
 
         return free_days
 
@@ -257,7 +258,7 @@ class Service:
     try: 
       # Проверям кэш в Redis
       cache_key = key_client_appointments(client_id, business_id)
-      cached_client_appointments = await get_cache(cache_key)
+      cached_client_appointments = await self.cache.get_cache(cache_key)
       if cached_client_appointments is not None:
         logger.info(f"Cache hit for client appointments, client_id: {client_id}, business_id: {business_id}")
         return cached_client_appointments
@@ -295,7 +296,7 @@ class Service:
         })
 
       # Добавляем результат в кэш Redis
-      await set_cache(cache_key, result, TTL_APPOINTMENTS)
+      await self.cache.set_cache(cache_key, result, TTL_APPOINTMENTS)
       
       return result
     
@@ -309,7 +310,7 @@ class Service:
     try:
       # Проверяем кэш в Redis
       cache_key = key_services(business_id)
-      cached_services = await get_cache(cache_key)
+      cached_services = await self.cache.get_cache(cache_key)
 
       if cached_services is not None:
         logger.info(f"Cache hit for business services, business_id: {business_id}")
@@ -334,7 +335,7 @@ class Service:
         for service in services
       ]
 
-      await set_cache(cache_key, serialized_services, TTL_SERVICES)
+      await self.cache.set_cache(cache_key, serialized_services, TTL_SERVICES)
 
       return serialized_services
       
@@ -348,7 +349,7 @@ class Service:
     try:
       # Проверяем кэш в Redis
       cache_key = key_business_appointments(business_id)
-      cached_appointments = await get_cache(cache_key)
+      cached_appointments = await self.cache.get_cache(cache_key)
 
       if cached_appointments is not None:
         logger.info(f"Cache hit for business appointments, business_id: {business_id}")
@@ -389,7 +390,7 @@ class Service:
       ]
 
       # Сохраняем результат в кэш Redis
-      await set_cache(cache_key, serialized_appointments, TTL_APPOINTMENTS)
+      await self.cache.set_cache(cache_key, serialized_appointments, TTL_APPOINTMENTS)
 
       return serialized_appointments
     except Exception as e:
@@ -579,15 +580,15 @@ class Service:
             payload=event_payload
         )
 
-      # Сбрасываем кэш
-      await cache_delete_pattern(pattern_all_slots(new_appointment.business_id))
-      await cache_delete_pattern(pattern_all_free_days(new_appointment.business_id))
-      await cache_delete_pattern(key_client_appointments(appointment_data.client_id, business_id))
-      await cache_delete_pattern(key_business_appointments(business_id))
-
       # РћРґРёРЅ commit РґР»СЏ РІСЃРµР№ С‚СЂР°РЅР·Р°РєС†РёРё
       await self.session.commit()
       await self.session.refresh(new_appointment)
+
+      # Сбрасываем кэш
+      await self.cache.cache_delete_pattern(pattern_all_slots(new_appointment.business_id))
+      await self.cache.cache_delete_pattern(pattern_all_free_days(new_appointment.business_id))
+      await self.cache.cache_delete_pattern(key_client_appointments(appointment_data.client_id, business_id))
+      await self.cache.cache_delete_pattern(key_business_appointments(business_id))
           
       logger.info(
           "appointment_created",
@@ -711,10 +712,10 @@ class Service:
       await self.session.commit()
 
       # Сбрасываем кэш
-      await cache_delete_pattern(pattern_all_slots(business_id))
-      await cache_delete_pattern(pattern_all_free_days(business_id))
-      await cache_delete_pattern(key_client_appointments(client_id, business_id))
-      await cache_delete_pattern(key_business_appointments(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
+      await self.cache.cache_delete_pattern(key_client_appointments(client_id, business_id))
+      await self.cache.cache_delete_pattern(key_business_appointments(business_id))
 
       return response
 
@@ -769,8 +770,10 @@ class Service:
         # Инвалидация кэша при изменении статуса (слоты и свободные дни)
         try:
           if old_status != new_status:
-            await cache_delete_pattern(pattern_all_slots(business_id))
-            await cache_delete_pattern(pattern_all_free_days(business_id))
+            await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+            await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
+            await self.cache.delete_cache(key_business_appointments(business_id))
+            await self.cache.delete_cache(key_business_appointments(key_client_appointments(client_id, business_id)))
         except Exception:
           pass
 
@@ -883,7 +886,7 @@ class Service:
       await self.session.refresh(new_staff)
       # Инвалидация кэша staff-for-service для бизнеса (на случай, если фронт кешировал список сотрудников)
       try:
-        await cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
+        await self.cache.cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
       except Exception:
         pass
       
@@ -908,9 +911,9 @@ class Service:
         raise HTTPException(status_code=404, detail="Staff not found")
       # Сбрасываем кэш: слоты и свободные дни, а также кэш staff-for-service
       try:
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
-        await cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
+        await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
+        await self.cache.cache_delete_pattern(f"cache:staffs:business_id:{business_id}:*")
       except Exception:
         pass
 
@@ -931,9 +934,9 @@ class Service:
 
       # Сбрасываем кэш
       try:
-        await delete_cache(key_services(business_id))
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await self.cache.delete_cache(key_services(business_id))
+        await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
       except Exception:
         pass
 
@@ -963,11 +966,11 @@ class Service:
       
       # Сбрасываем кэш
       try:
-        await delete_cache(key_services(business_id))
+        await self.cache.delete_cache(key_services(business_id))
         # удаляем кэш staff-for-service для этого сервиса
-        await delete_cache(key_staffs_for_service(business_id, service_id))
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await self.cache.delete_cache(key_staffs_for_service(business_id, service_id))
+        await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
       except Exception:
         pass
 
@@ -998,9 +1001,9 @@ class Service:
 
       # Сбрасываем кэш
       try:
-        await delete_cache(key_staffs_for_service(business_id, service_id))
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await self.cache.delete_cache(key_staffs_for_service(business_id, service_id))
+        await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
       except Exception:
         pass
 
@@ -1032,10 +1035,10 @@ class Service:
       await self.cancelled_appointment(business_id, appointment.client_id, appointment_id, cancelled_by_admin=True)
 
       # Сбрасываем кэш
-      await cache_delete_pattern(pattern_all_slots(business_id))
-      await cache_delete_pattern(pattern_all_free_days(business_id))
-      await cache_delete_pattern(key_client_appointments(appointment.client_id, business_id))
-      await cache_delete_pattern(key_business_appointments(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
+      await self.cache.cache_delete_pattern(key_client_appointments(appointment.client_id, business_id))
+      await self.cache.cache_delete_pattern(key_business_appointments(business_id))
 
       return {"message": "Appointment cancelled by admin successfully"}
     except HTTPException:
@@ -1052,8 +1055,8 @@ class Service:
       exc = await self.repository.create_schedule_exception(business_id, date, is_working, custom_start, custom_end)
 
       # Сбрасываем кэш
-      await cache_delete_pattern(pattern_all_slots(business_id))
-      await cache_delete_pattern(pattern_all_free_days(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_slots(business_id))
+      await self.cache.cache_delete_pattern(pattern_all_free_days(business_id))
 
       await self.session.commit()
       await self.session.refresh(exc)

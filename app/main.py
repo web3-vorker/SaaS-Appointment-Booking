@@ -6,15 +6,17 @@ import uuid
 import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+import httpx
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
-from app.routers.route import main_router
+from app.routers.main_router import main_router
+from app.routers.onboarding_router import onboarding_router
 from app.dev.dev_router import dev_router
 from app.admin.admin_router import admin_router
 from app.utils.structured_logger import setup_logging, get_logger
-from app.redis.client import close_redis
+from app.redis.redis_cache import redis_cache
 from app.scheduler.event_scheduler import event_scheduler_loop
 from app.config.config import config
 
@@ -31,8 +33,19 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("application_startup", version="1.0.0", environment=config.log_level)
-    app.state.event_scheduler_task = asyncio.create_task(event_scheduler_loop())
-    yield
+    
+    async with httpx.AsyncClient() as client:
+        app.state.client = client
+        app.state.event_scheduler_task = asyncio.create_task(event_scheduler_loop())
+        
+        yield
+        
+        app.state.event_scheduler_task.cancel()
+        try:
+            await app.state.event_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
 
     # Shutdown: отменяем задачу планировщика
     logger.info("application_shutdown")
@@ -45,7 +58,7 @@ async def lifespan(app: FastAPI):
             pass
     
     # Закрываем Redis соединение
-    await close_redis()
+    await redis_cache.close()
     logger.info("redis_connection_closed")
 
 
@@ -101,6 +114,7 @@ async def logging_middleware(request: Request, call_next):
 
 
 app.include_router(main_router)
+app.include_router(onboarding_router)
 app.include_router(dev_router)
 app.include_router(admin_router)
 

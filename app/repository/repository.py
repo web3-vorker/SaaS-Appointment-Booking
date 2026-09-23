@@ -573,6 +573,7 @@ class Repository:
                 .where(AppointmentModel.business_id == business_id)
             )
             appointment = result.scalars().first()
+            return appointment
         except Exception as e:
             logger.error("error_fetching_appointment_for_cancel", business_id=business_id, client_id=result.client_id if appointment else None, appointment_id=appointment_id, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise

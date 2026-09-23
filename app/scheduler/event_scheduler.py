@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.database import new_session
 from app.models.business import BusinessModel
-from app.redis.cache import delete_cache
+from app.redis.redis_cache import redis_cache
 from app.redis.cache_keys import key_business_by_api_key
 from app.utils.logger import logger
 from app.utils.datetime_utils import now_utc
@@ -151,7 +151,7 @@ async def deactivate_expired_subscriptions():
             
             # Инвалидируем кэш бизнеса
             try:
-                await delete_cache(key_business_by_api_key(business.api_key))
+                await redis_cache.delete_cache(key_business_by_api_key(business.api_key))
             except Exception:
                 pass
             

@@ -6,7 +6,7 @@ Redis мокируется, сетевых вызовов нет.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.redis.limiter import RateLimiter
+from app.redis.redis_limiter import RateLimiter
 
 
 def make_redis_mock(current_count: int = 0):

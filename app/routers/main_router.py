@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 
 from app.db.database import SessionDep
 from app.models.business import BusinessModel
-from app.redis.limiter import rate_limiter
+from app.redis.redis_limiter import rate_limiter
 from app.schemas.appointment import AppointmentCreateSchema
 from app.schemas.event import EventSchema
 from app.services.service import Service
 from app.repository.repository import Repository
 from app.utils.logger import logger
-from app.redis.cache import deserialize_business, get_cache, set_cache, serialize_business
+from app.redis.redis_cache import deserialize_business, redis_cache, serialize_business
 from app.redis.cache_keys import key_business_by_api_key, TTL_BUSINESS
 
 
@@ -21,11 +21,11 @@ main_router = APIRouter(prefix="/api/v1", tags=["API"])
 """----- РџСЂРѕРІРµСЂРєР° API Key -----"""
 async def get_current_business(session: SessionDep, x_api_key: str = Header(...)) -> BusinessModel:
     repository = Repository(session)
-    service = Service(session, repository)
+    service = Service(session, repository, redis_cache)
 
     # Проверяем есть ли бизнес в кэше Redis по API Key
     try:
-        cached_business = await get_cache(key_business_by_api_key(x_api_key))
+        cached_business = await redis_cache.get_cache(key_business_by_api_key(x_api_key))
         if cached_business:
             logger.info(f"Cache hit for business by API Key, api_key: {x_api_key}")
             return BusinessModel(**deserialize_business(cached_business))
@@ -41,7 +41,7 @@ async def get_current_business(session: SessionDep, x_api_key: str = Header(...)
     
     # Сохраняем бизнес в кэш Redis
     try:
-        await set_cache(key_business_by_api_key(x_api_key), serialize_business(business), TTL_BUSINESS)
+        await redis_cache.set_cache(key_business_by_api_key(x_api_key), serialize_business(business), TTL_BUSINESS)
     except Exception as e:
         # Если кэш недоступен, логируем но продолжаем (не критично)
         logger.warning(f"Cache write error for business: {e}")
@@ -52,7 +52,7 @@ async def get_current_business(session: SessionDep, x_api_key: str = Header(...)
 """----- Получение бизнеса по токену бота -----"""
 async def get_current_business_by_bot_token(session: SessionDep, x_bot_token: str = Header(...)) -> BusinessModel:
     repository = Repository(session)
-    service = Service(session, repository)
+    service = Service(session, repository, redis_cache)
     business = await service.get_business_by_bot_token(x_bot_token)
     if not business:
         raise HTTPException(status_code=401, detail="Invalid Bot Token")
@@ -66,7 +66,7 @@ async def get_current_business_by_bot_token(session: SessionDep, x_bot_token: st
 async def get_services(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         services = await service.get_business_services(business.id)
         return services
     except HTTPException:
@@ -78,7 +78,7 @@ async def get_services(session: SessionDep, business: BusinessModel = Depends(ge
 async def get_service_staffs(session: SessionDep, service_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         staffs = await service.get_service_staffs(business.id, service_id)
         return staffs
     except HTTPException:
@@ -95,7 +95,7 @@ async def get_free_days(
 ):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         free_days = await service.get_free_days(business, staff_id, service_id)
         return free_days
     except HTTPException:
@@ -113,7 +113,7 @@ async def get_available_slots(
 ):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         free_slots = await service.get_available_slots(business, staff_id, service_id, date)
         
         return free_slots
@@ -129,7 +129,7 @@ async def get_available_slots(
 async def get_client_appointments(session: SessionDep, client_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         appointments = await service.get_client_appointments(business.id, client_id)
         return appointments
     except HTTPException:
@@ -141,7 +141,7 @@ async def get_client_appointments(session: SessionDep, client_id: int, business:
 async def get_pending_events(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         events = await service.get_pending_events(business.id)
         return events
     except HTTPException:
@@ -154,7 +154,7 @@ async def get_pending_events(session: SessionDep, business: BusinessModel = Depe
 async def mark_event_sent(session: SessionDep, event_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         event = await service.mark_event_sent(business.id, event_id)
         return {"message": "Event marked as sent", "event_id": event.id}
     except HTTPException:
@@ -166,7 +166,7 @@ async def mark_event_sent(session: SessionDep, event_id: int, business: Business
 async def create_appointment(session: SessionDep, appointment_data: AppointmentCreateSchema, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         new_appointment = await service.create_appointment(business.id, appointment_data)
         return new_appointment
     except HTTPException:
@@ -178,7 +178,7 @@ async def create_appointment(session: SessionDep, appointment_data: AppointmentC
 async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str, phone: str = None, business: BusinessModel = Depends(get_current_business)) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.get_or_create_client(business.id, tg_id, client_name, phone)
         return result
     except HTTPException:
@@ -190,7 +190,7 @@ async def get_or_create_client(session: SessionDep, tg_id: int, client_name: str
 async def cancelled_appointment(session: SessionDep, client_id: int, appointment_id: int, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         await service.cancelled_appointment(business.id, client_id, appointment_id)
         return {"message": "Р—Р°РїРёСЃСЊ СѓСЃРїРµС€РЅРѕ РѕС‚РјРµРЅРµРЅР°"}
     except HTTPException:

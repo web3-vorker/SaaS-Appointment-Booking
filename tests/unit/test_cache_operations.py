@@ -7,7 +7,7 @@ import pytest
 import json
 from datetime import datetime, time, date
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.redis.cache import serialize_business, deserialize_business
+from app.redis.redis_cache import serialize_business, deserialize_business
 from app.redis.cache_keys import (
     key_services,
     key_staffs_for_service,

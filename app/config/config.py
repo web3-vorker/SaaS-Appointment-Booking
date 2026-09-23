@@ -19,6 +19,12 @@ class Config:
     api_url: str
     api_key: str
 
+    # Gateway
+    gateway_url: str
+
+    # Onboarding service
+    onboarding_service_key: str
+
     # Developer
     developer_key: str
 
@@ -64,7 +70,13 @@ class Config:
 
             # API
             api_url=os.getenv("API_URL", "http://localhost:8000/api/v1"),
-            api_key=os.getenv("API_KEY", "48f4b83087153abdf3fc895c8efdb45a"),
+            api_key=os.getenv("API_KEY", ""),
+
+            # Gateway
+            gateway_url=os.getenv("GATEWAY_URL", "http://localhost:8005"),
+
+            # Onboarding service
+            onboarding_service_key=os.getenv("ONBOARDING_SERVICE_KEY", ""),
 
             # Developer
             developer_key=os.getenv("DEVELOPER_KEY", ""),

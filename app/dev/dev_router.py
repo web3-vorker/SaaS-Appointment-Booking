@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select
-from app.redis.cache import cache_delete_pattern, delete_cache
+from app.redis.redis_cache import redis_cache
 from app.redis.cache_keys import (
     pattern_all_slots,
     pattern_all_free_days,
@@ -14,7 +14,6 @@ from app.redis.cache_keys import (
     key_services,
 )
 from app.utils.datetime_utils import now_utc
-from app.redis.limiter import get_redis_client
 
 from app.repository.repository import Repository
 from app.services.service import Service
@@ -87,6 +86,7 @@ async def create_business(
             name=business_data.name,
             working_time_start=working_time_start,
             working_time_end=working_time_end,
+            is_active=True,
             owner_tg_id=business_data.owner_tg_id,
             api_key=api_key,
             subscription_plan=business_data.subscription_plan or "Base",
@@ -127,11 +127,11 @@ async def delete_business(
 
         # Сбрасываем кэш для этого бизнеса
         try:
-            await cache_delete_pattern(pattern_all_slots(business_id))
-            await cache_delete_pattern(pattern_all_free_days(business_id))
-            await delete_cache(key_services(business_id))
+            await redis_cache.cache_delete_pattern(pattern_all_slots(business_id))
+            await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
+            await redis_cache.delete_cache(key_services(business_id))
             if business.api_key:
-                await delete_cache(key_business_by_api_key(business.api_key))
+                await redis_cache.delete_cache(key_business_by_api_key(business.api_key))
         except Exception:
             pass
 
@@ -478,7 +478,7 @@ async def create_appointment_by_dev(
 
         # Используем существующий сервис для создания записи (с проверками на overlaps и т.д.)
         repository = Repository(session)
-        service_service = Service(session, repository)
+        service_service = Service(session, repository, redis_cache)
 
         appointment = await service_service.create_appointment(
             business_id=business_id,
@@ -541,8 +541,8 @@ async def update_business_schedule(
             business.weekend_days = weekend_days
 
         # Сбрасываем кэш
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
 
         await session.commit()
         await session.refresh(business)
@@ -590,14 +590,14 @@ async def create_schedule_exception(
             exc.custom_end_time = time(h, m)
 
         # Сбрасываем кэш
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
         
         session.add(exc)
         
         # Инвалидируем кэш свободных дней при создании исключения
         try:
-            await cache_delete_pattern(pattern_all_free_days(business_id))
+            await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
         except Exception:
             pass
         
@@ -663,14 +663,14 @@ async def delete_schedule_exception(
             raise HTTPException(status_code=404, detail="Exception not found")
         
         # Сбрасываем кэш
-        await cache_delete_pattern(pattern_all_slots(business_id))
-        await cache_delete_pattern(pattern_all_free_days(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_slots(business_id))
+        await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
 
         await session.delete(exception)
         
         # Инвалидируем кэш свободных дней при удалении исключения
         try:
-            await cache_delete_pattern(pattern_all_free_days(business_id))
+            await redis_cache.cache_delete_pattern(pattern_all_free_days(business_id))
         except Exception:
             pass
         
@@ -692,7 +692,7 @@ async def health_check(session: SessionDep) -> dict:
         result["database"] = "ok"
 
         # Проверка Redis подключения
-        redis_client = await get_redis_client()
+        redis_client = await redis_cache.get_client()
         await redis_client.ping()
         result["redis"] = "ok"
 

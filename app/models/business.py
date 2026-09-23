@@ -1,6 +1,6 @@
 # Модель данных для бизнесов
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, BigInteger, Time, JSON
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, BigInteger, Time, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -9,6 +9,10 @@ from app.models.base import Base
 
 class BusinessModel(Base):
   __tablename__ = 'businesses'
+
+  __table_args__ = (
+    UniqueConstraint('onboarding_id', name='uq_business_onboarding_id'),
+  )
 
   id = Column(Integer, primary_key=True)
   name = Column(String, nullable=False)
@@ -25,9 +29,10 @@ class BusinessModel(Base):
   weekend_days = Column(JSON, nullable=True, default=list)
   
   created_at = Column(DateTime, default=datetime.now)
-  is_active = Column(Boolean, default=True)
+  is_active = Column(Boolean, default=False)
   owner_tg_id = Column(BigInteger, nullable=False)
   api_key = Column(String, default=lambda: str(uuid.uuid4()), unique=True)
+  onboarding_id = Column(String, default=lambda: str(uuid.uuid4()), nullable=True)  # ID для отслеживания процесса онбординга и предотвращения повторного создания бизнесов одним пользователем
 
   # Подписка
   subscription_plan = Column(String, default="Base")  # Тарифный план (Base, Pro) 

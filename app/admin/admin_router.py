@@ -3,9 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.database import SessionDep
-from app.redis.limiter import rate_limiter
+from app.redis.redis_cache import redis_cache
+from app.redis.redis_limiter import rate_limiter
 from app.repository.repository import Repository
-from app.routers.route import get_current_business
+from app.routers.main_router import get_current_business
 from app.schemas.appointment import AppointmentCreateSchema
 from app.schemas.staff_service import StaffServiceCreateSchema
 from app.services.service import Service
@@ -23,19 +24,19 @@ admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 async def get_services(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         services = await service.get_business_services(business.id)
         return services
     except HTTPException:
         raise   
-    
+
 
 """----- Получение сотрудников бизнеса -----"""
 @admin_router.get("/staffs/", dependencies=[Depends(rate_limiter(5, 20, "get_staffs"))])
 async def get_staffs(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         staffs = await service.get_business_staffs(business.id)
         return staffs
     except HTTPException:
@@ -47,7 +48,7 @@ async def get_staffs(session: SessionDep, business: BusinessModel = Depends(get_
 async def get_business_appointments(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         appointments = await service.get_business_appointments(business.id)
         return appointments
     except HTTPException:
@@ -59,7 +60,7 @@ async def get_business_appointments(session: SessionDep, business: BusinessModel
 async def get_business_appointment_history(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         history = await service.get_business_appointment_history(business.id)
         return history
     except HTTPException:
@@ -71,7 +72,7 @@ async def get_business_appointment_history(session: SessionDep, business: Busine
 async def get_unmarked_appointments(session: SessionDep, business: BusinessModel = Depends(get_current_business)):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         appointments = await service.get_unmarked_appointments(business.id)
         return appointments
     except HTTPException:
@@ -91,7 +92,7 @@ async def create_staff(
             raise HTTPException(status_code=403, detail="You can only create staff for your own business")
 
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.create_staff_admin(business.id, staff_data.name, staff_data.role)
         return result
     except HTTPException:
@@ -107,7 +108,7 @@ async def delete_staff(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.delete_staff_admin(business.id, staff_id)
         return result
     except HTTPException:
@@ -127,7 +128,7 @@ async def create_service(
             raise HTTPException(status_code=403, detail="You can only create services for your own business")
 
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.create_service_admin(
             business.id, 
             service_data.name, 
@@ -149,7 +150,7 @@ async def delete_service(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.delete_service_admin(business.id, service_id)
         return result
     except HTTPException:
@@ -164,7 +165,7 @@ async def assign_service_to_staff(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.create_staff_service_admin(
             staff_service_data.business_id,
             staff_service_data.staff_id,
@@ -184,7 +185,7 @@ async def create_appointment(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         new_appointment = await service.create_appointment(business.id, appointment_data)
         return new_appointment
     except HTTPException:
@@ -200,7 +201,7 @@ async def cancel_appointment_by_id(
 ):
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.cancel_appointment_admin(business.id, appointment_id)
         return result
     except HTTPException:
@@ -219,7 +220,7 @@ async def create_schedule_exception(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.create_schedule_exception_admin(business.id, date, is_working, custom_start, custom_end)
         return result
     except HTTPException:
@@ -234,7 +235,7 @@ async def get_schedule_exceptions(
 ) -> list[dict]:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         exceptions = await service.get_schedule_exceptions_admin(business.id)
         return exceptions
     except HTTPException:
@@ -250,7 +251,7 @@ async def delete_schedule_exception(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         result = await service.delete_schedule_exception_admin(business.id, exception_id)
         return result
     except HTTPException:
@@ -268,7 +269,7 @@ async def update_appointment_status(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         
         result = await service.update_appointment_status(business.id, client_id, appointment_id, new_status)
         return result
@@ -284,7 +285,7 @@ async def get_subscription_info(
 ) -> dict:
     try:
         repository = Repository(session)
-        service = Service(session, repository)
+        service = Service(session, repository, redis_cache)
         
         result = await service.get_subscription_info(business.id)
         return result

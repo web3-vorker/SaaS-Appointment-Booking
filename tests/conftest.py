@@ -20,6 +20,7 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("DEVELOPER_KEY", "test-dev-key-12345")
+os.environ.setdefault("ONBOARDING_SERVICE_KEY", "test-onboarding-key-12345")
 os.environ.setdefault("API_KEY", "test-api-key-12345")
 os.environ.setdefault("TIMEZONE_OFFSET", "3")
 os.environ.setdefault("LOG_LEVEL", "ERROR")
@@ -109,6 +110,9 @@ def mock_redis():
     redis.zadd = AsyncMock(return_value=1)
     redis.expire = AsyncMock(return_value=True)
     redis.ping = AsyncMock(return_value=True)
+    redis.get = AsyncMock(return_value=None)
+    redis.scan = AsyncMock(return_value=(0, []))
+    redis.delete = AsyncMock(return_value=0)
     return redis
 
 
@@ -234,7 +238,7 @@ async def api_client(test_engine, mock_redis, monkeypatch):
     """
     from app.main import app
     import app.db.database as db_module
-    import app.redis.client as client_module
+    import app.redis.redis_client as client_module
 
     # Подменяем сессию
     test_session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -245,9 +249,12 @@ async def api_client(test_engine, mock_redis, monkeypatch):
 
     app.dependency_overrides[db_module.get_session] = override_get_session
 
-    # Подменяем Redis
-    monkeypatch.setattr(client_module, "redis_client", mock_redis)
-    monkeypatch.setattr(client_module, "get_redis_client", AsyncMock(return_value=mock_redis))
+    # Подменяем низкоуровневый клиент, общий для redis_cache и rate limiter
+    monkeypatch.setattr(
+        client_module.redis_client,
+        "get_client",
+        AsyncMock(return_value=mock_redis),
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -263,16 +270,24 @@ async def service(db_session, mock_redis, monkeypatch):
     """
     from app.services.service import Service
     from app.repository.repository import Repository
-    import app.redis.client as client_module
+    import app.redis.redis_client as client_module
+    from app.redis.redis_cache import redis_cache
     
-    # Подменяем Redis
-    monkeypatch.setattr(client_module, "redis_client", mock_redis)
-    monkeypatch.setattr(client_module, "get_redis_client", AsyncMock(return_value=mock_redis))
+    # Подменяем низкоуровневый клиент, общий для redis_cache и rate limiter
+    monkeypatch.setattr(
+        client_module.redis_client,
+        "get_client",
+        AsyncMock(return_value=mock_redis),
+    )
     
     # Создаем mock repository
     mock_repository = AsyncMock(spec=Repository)
     
     # Создаем Service с мок-сессией и mock repository
-    service_instance = Service(session=db_session, repository=mock_repository)
+    service_instance = Service(
+        session=db_session,
+        repository=mock_repository,
+        cache=redis_cache,
+    )
     
     return service_instance
